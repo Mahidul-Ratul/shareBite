@@ -101,7 +101,8 @@ const AdminDashboard = () => {
             <FontAwesome5 name="crown" size={20} color="#fbbf24" />
             <Text className="text-white/90 text-sm font-medium ml-2">Admin Portal</Text>
           </View>
-          
+          <Text className="text-white text-2xl font-bold mt-1">Welcome back, Admin!</Text>
+          <Text className="text-white/90 text-sm">Here’s what’s happening with your donations today.</Text>
         </View>
            
           
