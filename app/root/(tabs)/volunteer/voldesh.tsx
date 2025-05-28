@@ -120,12 +120,7 @@ export default function VolunteerHome() {
     <View className="flex-1 bg-white">
       <ScrollView className="flex-1">
         {/* Welcome Section */}
-        <View className="bg-white px-6 pt-12 pb-4">
-          <Text className="text-2xl font-rubik-bold text-gray-900">
-            Welcome back, {volunteer.name}!
-          </Text>
-          <Text className="text-gray-600 mt-1">{welcomeQuote}</Text>
-        </View>
+        
 
         <LinearGradient
           colors={['#f97316', '#ea580c']} // orange-500 to orange-600
@@ -424,7 +419,7 @@ export default function VolunteerHome() {
           </TouchableOpacity>
         </Link>
 
-        <Link href="./vol_pro" asChild>
+        <Link href="./not" asChild>
           <TouchableOpacity
             className="items-center flex-1"
             activeOpacity={0.7}
