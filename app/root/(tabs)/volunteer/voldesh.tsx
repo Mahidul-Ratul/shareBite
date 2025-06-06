@@ -143,7 +143,11 @@ export default function VolunteerHome() {
                 </View>
               </View>
             </View>
-            <TouchableOpacity className="bg-white/20 p-2 rounded-full">
+            // Update the notification button in the Profile Section
+            <TouchableOpacity 
+              className="bg-white/20 p-2 rounded-full"
+              onPress={() => router.push('./notification')}
+            >
               <View>
                 <MaterialIcons name="notifications" size={24} color="white" />
                 <View className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full items-center justify-center">
@@ -404,7 +408,7 @@ export default function VolunteerHome() {
           </TouchableOpacity>
         </Link>
 
-        <Link href="./my-tasks" asChild>
+        <Link href="./history" asChild>
           <TouchableOpacity
             className="items-center flex-1"
             style={{ transform: [{ scale: 1 }] }}
