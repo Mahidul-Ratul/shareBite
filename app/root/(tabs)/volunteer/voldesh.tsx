@@ -13,7 +13,7 @@ interface Volunteer {
   role: string;
   email: string;
   location: string;
-  image_url: any;
+  image_url: string | number; // Accepts both static require and string uri
   badges: string[];
   stats: {
     deliveries: string;
@@ -41,7 +41,7 @@ interface Volunteer {
   }>;
   recentActivity: Array<{
     id: string;
-    image: any;
+    image: string | number;
     type: string;
     typeColor: string;
     date: string;
@@ -148,7 +148,11 @@ export default function VolunteerHome() {
                 </View>
               </View>
             </View>
-            <TouchableOpacity className="bg-white/20 p-2 rounded-full">
+            {/* Update the notification button in the Profile Section */}
+            <TouchableOpacity 
+              className="bg-white/20 p-2 rounded-full"
+              onPress={() => router.push('./notification')}
+            >
               <View>
                 <MaterialIcons name="notifications" size={24} color="white" />
                 <View className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full items-center justify-center">
@@ -328,7 +332,7 @@ export default function VolunteerHome() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-6">
             {volunteer.recentActivity.map((activity: {
               id: string;
-              image: any;
+              image: string | number;
               type: string;
               typeColor: string;
               date: string;
@@ -342,7 +346,7 @@ export default function VolunteerHome() {
                 className="bg-white rounded-xl shadow-sm border border-gray-100 mr-4 w-300"
               >
                 <Image
-                  source={activity.image}
+                  source={typeof activity.image === 'string' ? { uri: activity.image } : activity.image}
                   className="w-full h-40 rounded-t-xl"
                   resizeMode="cover"
                 />
@@ -409,7 +413,7 @@ export default function VolunteerHome() {
           </TouchableOpacity>
         </Link>
 
-        <Link href="./my-tasks" asChild>
+        <Link href="./history" asChild>
           <TouchableOpacity
             className="items-center flex-1"
             style={{ transform: [{ scale: 1 }] }}
@@ -424,7 +428,7 @@ export default function VolunteerHome() {
           </TouchableOpacity>
         </Link>
 
-        <Link href="./vol_pro" asChild>
+        <Link href="./not" asChild>
           <TouchableOpacity
             className="items-center flex-1"
             activeOpacity={0.7}
