@@ -16,35 +16,25 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     try {
-      // Determine the table based on the selected role
-     
-  
-      // Debugging: Log the table name and input values
-     
-      console.log("Email:", email);
-      console.log("Password:", password);
-  
-      // Query the corresponding table to verify the user exists and credentials match
+      // 1. Authenticate with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      if (authError || !authData.session) {
+        throw new Error('Invalid login credentials (Auth)');
+      }
+      // 2. Check the admin table for the email only
       const { data: userData, error: userError } = await supabase
         .from('admin')
-        .select("*")
-        .eq("email", email)
-        .eq("password", password) // Match both email and password
+        .select('*')
+        .eq('email', email)
         .single();
-  
-      // Debugging: Log the query result
-      console.log("Query result:", userData, userError);
-  
       if (userError || !userData) {
-        throw new Error("Invalid login credentials");
+        await supabase.auth.signOut();
+        throw new Error('No admin profile found for this email.');
       }
-      await AsyncStorage.setItem("userEmail", email);
-  
-      // Navigate based on role
-      
-        router.push("../admin/dashboard");
-      
-    } catch (error: unknown) {
+      await AsyncStorage.setItem('userEmail', email);
+      // Navigate to admin dashboard
+      router.push("../admin/dashboard");
+    } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
       console.error("Login error:", errorMessage);
       Alert.alert("Error", errorMessage);

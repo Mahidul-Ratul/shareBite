@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+console.log('THIS IS THE UPPERCASE DonationDetail.tsx FILE');
+
+import React, { useState, useCallback } from 'react';
 import { View, ScrollView, Image, Text, TouchableOpacity, Alert, Dimensions ,Pressable,Modal} from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../../../constants/supabaseConfig';
+import axios from 'axios';
 
 const { width } = Dimensions.get('window');
+const geocodeCache = new Map();
 
 const DonationDetail = () => {
   const router = useRouter();
@@ -15,10 +19,239 @@ const DonationDetail = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [volunteers, setVolunteers] = useState<any[]>([]); // Placeholder for volunteers data
+  const [donationLatLng, setDonationLatLng] = useState<{ lat: number; lng: number } | null>(null);
+  const [volunteersLoading, setVolunteersLoading] = useState(false);
+
+  const isPlusCode = (address: string) => {
+  // Plus codes format: "QG2X+F36" or similar
+  return /^[23456789CFGHJMPQRVWX]{4}\+[23456789CFGHJMPQRVWX]{2,3}/.test(address.split(',')[0].trim());
+};
+
+// Helper function to clean address for better geocoding
+const cleanAddress = (address: string) => {
+  // Remove "unnamed road" as it's not helpful
+  let cleaned = address.replace(/unnamed road,?\s*/i, '');
+  
+  // If it's a Plus Code, try to extract area information
+  if (isPlusCode(address)) {
+    const parts = address.split(',').map(s => s.trim());
+    // Use area name instead of plus code for geocoding
+    if (parts.length > 1) {
+      cleaned = parts.slice(1).join(', '); // Remove plus code, keep area
+    }
+  }
+  
+  return cleaned.trim();
+};
 
 
-  // Parse the images array from the donation
-  const images = donation.Images ? JSON.parse(donation.Images as string) : [];
+
+  // Geocode donation address to lat/lng using OpenCage API
+  // Fix: Type the OpenCage response to avoid 'unknown' errors
+// Replace your existing geocodeDonationLocation function with this enhanced version
+const geocodeDonationLocation = async (address: string) => {
+  // Check cache first
+  if (geocodeCache.has(address)) {
+    return geocodeCache.get(address);
+  }
+
+  try {
+    let queryAddress = address;
+    
+    // Handle Plus Codes by converting them first
+    if (isPlusCode(address)) {
+      // Try to decode Plus Code using Google's API (free)
+      try {
+        interface PlusCodeApiResponse {
+          plus_code?: {
+            geometry?: {
+              location: {
+                lat: number;
+                lng: number;
+              };
+            };
+          };
+        }
+        const plusCodeResponse = await axios.get<PlusCodeApiResponse>(`https://plus.codes/api?address=${encodeURIComponent(address.split(',')[0].trim())}&ekey=free`);
+        if (
+          plusCodeResponse.data &&
+          plusCodeResponse.data.plus_code &&
+          plusCodeResponse.data.plus_code.geometry
+        ) {
+          const result = {
+            lat: plusCodeResponse.data.plus_code.geometry.location.lat,
+            lng: plusCodeResponse.data.plus_code.geometry.location.lng,
+          };
+          geocodeCache.set(address, result);
+          return result;
+        }
+      } catch (plusError) {
+        console.log('Plus code conversion failed, trying area name');
+      }
+      
+      // Fallback: use area name for geocoding
+      queryAddress = cleanAddress(address);
+    } else {
+      // Clean the address for better geocoding
+      queryAddress = cleanAddress(address);
+    }
+
+    // If we have a cleaned address, try geocoding
+    if (queryAddress) {
+      const response = await axios.get('https://api.opencagedata.com/geocode/v1/json', {
+        params: {
+          q: queryAddress,
+          key: 'ceea64097b1646c4b18647701f0a60dc',
+          limit: 1,
+          countrycode: 'bd', // Restrict to Bangladesh for better results
+        },
+      });
+      
+      const data = response.data as {
+        results: Array<{ geometry: { lat: number; lng: number } }>;
+      };
+      
+      let result = null;
+      if (data.results && data.results.length > 0) {
+        result = {
+          lat: data.results[0].geometry.lat,
+          lng: data.results[0].geometry.lng,
+        };
+      }
+      
+      // Cache the result (even if null) to avoid repeated failures
+      geocodeCache.set(address, result);
+      return result;
+    }
+    
+    // If all fails, cache null and return
+    geocodeCache.set(address, null);
+    return null;
+    
+  } catch (error) {
+    console.error('Geocoding error:', error);
+    // Cache null result to avoid repeated failures
+    geocodeCache.set(address, null);
+    return null;
+  }
+};
+  // Parse POINT string to {lat, lng}
+  const parsePoint = (pointStr: string) => {
+    // Format: POINT(lng lat)
+    const match = pointStr.match(/POINT\\(([-0-9.]+) ([-0-9.]+)\\)/);
+    if (!match) return null;
+    return { lng: parseFloat(match[1]), lat: parseFloat(match[2]) };
+  };
+
+  // Haversine formula
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+    const R = 6371; // km
+    const dLat = toRadians(lat2 - lat1);
+    const dLon = toRadians(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  // Fetch volunteers and filter by distance using address geocoding
+const fetchNearbyVolunteers = useCallback(async (lat: number, lng: number) => {
+  setVolunteersLoading(true);
+  try {
+    const { data: vols, error } = await supabase.from('volunteer').select('*');
+    if (error) throw error;
+    
+    console.log('Raw fetched volunteers:', vols);
+    if (!vols || vols.length === 0) {
+      console.warn('No volunteers returned from Supabase!');
+      setVolunteers([]);
+      setVolunteersLoading(false);
+      return;
+    }
+
+    // Limit to first 20 volunteers to avoid too many API calls
+    const limitedVolunteers = vols.slice(0, 20);
+    console.log('Processing limited volunteers:', limitedVolunteers.length);
+
+    // Process volunteers in batches to avoid overwhelming API
+    const batchSize = 5;
+    const geocodedVolunteers = [];
+    
+    for (let i = 0; i < limitedVolunteers.length; i += batchSize) {
+      const batch = limitedVolunteers.slice(i, i + batchSize);
+      
+      const batchResults = await Promise.all(
+        batch.map(async (v: any) => {
+          if (!v.address) {
+            console.warn('Volunteer missing address:', v);
+            return null;
+          }
+          
+          console.log('Geocoding volunteer address:', v.address);
+          try {
+            const geo = await geocodeDonationLocation(v.address);
+            if (!geo) {
+              console.warn('Geocoding failed for address:', v.address);
+              return null;
+            }
+            const distance = calculateDistance(lat, lng, geo.lat, geo.lng);
+            console.log(`Volunteer ${v.name || v.id} at ${v.address} is ${distance.toFixed(2)} km away`);
+            return { ...v, lat: geo.lat, lng: geo.lng, distance };
+          } catch (err) {
+            console.warn('Error geocoding address:', v.address, err);
+            return null;
+          }
+        })
+      );
+      
+      geocodedVolunteers.push(...batchResults);
+      
+      // Small delay between batches to respect rate limits
+      if (i + batchSize < limitedVolunteers.length) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+
+    const filtered = geocodedVolunteers
+      .filter((v: any) => v && v.distance <= 20)
+      .sort((a: any, b: any) => a.distance - b.distance);
+      
+    setVolunteers(filtered);
+    if (filtered.length === 0) {
+      console.warn('No volunteers found within 20km.');
+    }
+  } catch (e) {
+    setVolunteers([]);
+    console.error('Error fetching volunteers:', e);
+  } finally {
+    setVolunteersLoading(false);
+  }
+}, []);
+
+  // When modal opens for volunteer assignment, geocode and fetch volunteers
+ React.useEffect(() => {
+  if (modalVisible && selectedOption === 'volunteer') {
+    Alert.alert('Debug', 'Volunteer assignment modal opened!');
+    (async () => {
+      const targetCoords = donationLatLng 
+        ? donationLatLng 
+        : await geocodeDonationLocation(donation.Location as string);
+
+      if (!targetCoords) return;
+      
+      if (!donationLatLng) {
+        setDonationLatLng(targetCoords);
+      }
+
+      await fetchNearbyVolunteers(targetCoords.lat, targetCoords.lng);
+    })();
+  }
+}, [modalVisible, selectedOption, donationLatLng, donation.Location, fetchNearbyVolunteers]);
+
+  console.log('DonationDetail component rendered');
 
   const handleApproval = async (status: 'approved' | 'rejected') => {
     setIsLoading(true);
@@ -65,28 +298,30 @@ const DonationDetail = () => {
       setIsLoading(false);
     }
   };
+  // In the modal volunteer list, show distance and allow selection
+  // Add state for selected volunteer
+  const [selectedVolunteerId, setSelectedVolunteerId] = useState<string | null>(null);
+
+  // Update handleAssign to use selectedVolunteerId
   const handleAssign = async () => {
     setIsLoading(true);
     try {
-      // Update donation with the selected option
       let updateData: any = { status: 'assigned' };
-      
       if (selectedOption === 'volunteer') {
-        // Assign to a volunteer (you would select one from volunteers list)
-        updateData.volunteer_id = volunteers[0]?.id; // Example: assign first volunteer
+        if (!selectedVolunteerId) {
+          Alert.alert('Select Volunteer', 'Please select a volunteer to assign.');
+          setIsLoading(false);
+          return;
+        }
+        updateData.volunteer_id = selectedVolunteerId;
       } else if (selectedOption === 'receiver') {
-        // Mark for receiver to collect
         updateData.assigned_to = 'receiver';
       }
-
       const { error } = await supabase
         .from('donation')
         .update(updateData)
         .eq('id', donation.id);
-
       if (error) throw error;
-
-      // Send notification
       const { error: notifError } = await supabase.from('notifications').insert([
         {
           title: selectedOption === 'volunteer' ? 'Assigned to Volunteer' : 'Please Collect Donation',
@@ -96,19 +331,26 @@ const DonationDetail = () => {
           for: selectedOption === 'volunteer' ? 'volunteer' : 'receiver',
           donation_id: donation.id,
           created_at: new Date().toISOString(),
+          volunteer_id: selectedOption === 'volunteer' ? selectedVolunteerId : null,
         }
       ]);
-
       if (notifError) throw notifError;
-
       Alert.alert('Success', 'Donation assignment updated successfully');
       setModalVisible(false);
+      setSelectedVolunteerId(null);
     } catch (error) {
       Alert.alert('Error', 'Failed to update donation assignment');
     } finally {
       setIsLoading(false);
     }
   };
+  // Fix: Define images from donation.picture (if available)
+  const images = donation.picture
+    ? Array.isArray(donation.picture)
+      ? donation.picture
+      : [donation.picture]
+    : [];
+
   if (donation.status === 'approvedF') {
     return (
       <View className="flex-1 bg-white">
@@ -192,26 +434,30 @@ const DonationDetail = () => {
 
               {selectedOption === 'volunteer' && (
                 <>
-                  {volunteers.length > 0 ? (
+                  {volunteersLoading ? (
+                    <View className="py-4"><Text className="text-gray-600">Loading volunteers...</Text></View>
+                  ) : volunteers.length > 0 ? (
                     <View>
                       <Text className="text-gray-600 mb-4">
                         Select a volunteer to collect this donation:
                       </Text>
                       {/* List of volunteers */}
                       {volunteers.map((volunteer) => (
-                        <TouchableOpacity 
+                        <TouchableOpacity
                           key={volunteer.id}
-                          className="py-3 border-b border-gray-100"
+                          className={`py-3 border-b border-gray-100 ${selectedVolunteerId === volunteer.id ? 'bg-blue-100' : ''}`}
+                          onPress={() => setSelectedVolunteerId(volunteer.id)}
                         >
                           <Text className="text-gray-900 font-medium">{volunteer.name}</Text>
                           <Text className="text-gray-600 text-sm">{volunteer.contact}</Text>
+                          <Text className="text-gray-500 text-xs">{volunteer.distance.toFixed(2)} km away</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
                   ) : (
                     <View className="py-4">
                       <Text className="text-gray-600 mb-4">
-                        No volunteers available. Please try again later or assign to your NGO.
+                        No volunteers available nearby. Please try again later or assign to your NGO.
                       </Text>
                     </View>
                   )}

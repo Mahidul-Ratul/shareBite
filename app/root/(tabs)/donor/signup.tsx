@@ -88,31 +88,25 @@ export default function SignUpScreen() {
       Alert.alert("Error", "Passwords do not match!");
       return;
     }
-
     try {
       console.log("Attempting sign-up...");
-
-      const { error: authError } = await supabase.auth.signUp({ email, password });
+      // First, sign up with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
       if (authError) {
         console.log("Auth Error:", authError.message);
         throw authError;
       }
-
       let imageUrl = null;
       if (image) {
-        // Store the base64 string as the profile image
         imageUrl = image;
       }
-
       console.log("Inserting user data into database...");
       const userData: UserData = { fullName, email, phoneNumber, address, password, profileImage: imageUrl || "", type: userType };
       const { error: insertError } = await supabase.from("users").insert([userData]);
-
       if (insertError) {
         console.log("Database Insert Error:", insertError.message);
         throw insertError;
       }
-
       Alert.alert("Success", "Sign-up successful! Please check your email.");
       router.push(".././login");
     } catch (error) {

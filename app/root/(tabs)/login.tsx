@@ -18,52 +18,44 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     try {
-      // Determine the table based on the selected role
-      let tableName = "";
-      if (role === "Donor") {
-        tableName = "users";
-      } else if (role === "Receiver") {
-        tableName = "receiver";
-      } else if (role === "Volunteer") {
-        tableName = "volunteer";
+      // 1. Authenticate with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      if (authError || !authData.session) {
+        throw new Error('Invalid login credentials (Auth)');
       }
-  
-      // Debugging: Log the table name and input values
-      console.log("Authenticating from table:", tableName);
-      console.log("Email:", email);
-      console.log("Password:", password);
-  
-      // Query the corresponding table to verify the user exists and credentials match
+      // 2. Use the selected role to check the corresponding table for the email only
+      let tableName = '';
+      if (role === 'Donor') {
+        tableName = 'users';
+      } else if (role === 'Receiver') {
+        tableName = 'receiver';
+      } else if (role === 'Volunteer') {
+        tableName = 'volunteer';
+      }
       const { data: userData, error: userError } = await supabase
         .from(tableName)
-        .select("*")
-        .eq("email", email)
-        .eq("password", password) // Match both email and password
+        .select('*')
+        .eq('email', email)
         .single();
-  
-      // Debugging: Log the query result
-      console.log("Query result:", userData, userError);
-  
       if (userError || !userData) {
-        throw new Error("Invalid login credentials");
+        await supabase.auth.signOut();
+        throw new Error('No profile found for this role.');
       }
-      await AsyncStorage.setItem("userEmail", email);
-      const userId = userData.id; // Fetch user ID
-
-      await AsyncStorage.setItem("userId", userId.toString()); // Save ID
-  
+      await AsyncStorage.setItem('userEmail', email);
+      const userId = userData.id;
+      await AsyncStorage.setItem('userId', userId.toString());
       // Navigate based on role
-      if (role === "Donor") {
-        router.push("../donor/desh");
-      } else if (role === "Receiver") {
-        router.push("../receiver/dashboard");
-      } else if (role === "Volunteer") {
-        router.push("../volunteer/voldesh");
+      if (role === 'Donor') {
+        router.push('../donor/desh');
+      } else if (role === 'Receiver') {
+        router.push('../receiver/dashboard');
+      } else if (role === 'Volunteer') {
+        router.push('../volunteer/voldesh');
       }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-      console.error("Login error:", errorMessage);
-      Alert.alert("Error", errorMessage);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      console.error('Login error:', errorMessage);
+      Alert.alert('Error', errorMessage);
     }
   };
   return (

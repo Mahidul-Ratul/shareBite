@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { FontAwesome5 } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { supabase } from '../../../../constants/supabaseConfig';
@@ -92,17 +92,15 @@ export default function NotificationList() {
     <TouchableOpacity
       key={notification.id}
       className={`p-4 rounded-xl border border-gray-100 ${
-        notification.isread ? 'bg-white' : 'bg-green-50' // Different background for unread notifications
+        notification.isread ? 'bg-white' : 'bg-green-50'
       }`}
-      
-      onPress={() => {
-        markAsRead(notification.id);
-         // Mark notification as read
+      onPress={async () => {
+        await markAsRead(notification.id);
+        // Always navigate to the detail page, regardless of donation status
         router.push({
           pathname: '/root/(tabs)/admin/DonationDetailN',
-          params: { id: notification.donation_id }, // Pass the donation ID to the detail page
+          params: { id: notification.donation_id },
         });
-       
       }}
     >
       <View className="flex-row items-center space-x-4">

@@ -13,10 +13,11 @@ interface Notification {
   donation_id: string;
   created_at: string;
   status: 'pending' | 'accepted' | 'unavailable';
-  type: 'donation' | 'event' | 'system';
+  type: 'donation' | 'event' | 'system' | 'volunteer-confirm';
   location?: string;
   meals?: number;
   donorName?: string;
+  isread?: boolean;
 }
 
 export default function NotificationsScreen() {
@@ -30,10 +31,11 @@ export default function NotificationsScreen() {
       const email = await AsyncStorage.getItem('userEmail');
       if (!email) return;
 
+      // Fetch notifications for this volunteer (direct or broadcast)
       const { data, error } = await supabase
-        .from('volunteer_notifications')
+        .from('notifications')
         .select('*')
-        .eq('volunteer_email', email)
+        .or(`volunteer_id.eq.${email},for.eq.volunteer,for.eq.all`)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -60,7 +62,7 @@ export default function NotificationsScreen() {
         Alert.alert('Sorry', 'This donation is no longer available');
         // Update notification status to unavailable
         await supabase
-          .from('volunteer_notifications')
+          .from('notifications')
           .update({ status: 'unavailable' })
           .eq('id', notificationId);
         
@@ -84,7 +86,7 @@ export default function NotificationsScreen() {
 
       // Update notification status
       await supabase
-        .from('volunteer_notifications')
+        .from('notifications')
         .update({ status: 'accepted' })
         .eq('id', notificationId);
 
@@ -96,6 +98,100 @@ export default function NotificationsScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAcceptVolunteerDelivery = async (notificationId: string, donationId: string) => {
+    setLoading(true);
+    try {
+      // Check if a volunteer is already assigned for this donation
+      const { data: donationData, error: donationError } = await supabase
+        .from('donation')
+        .select('volunteer_id, status')
+        .eq('id', donationId)
+        .single();
+      if (donationError) throw donationError;
+      if (donationData.volunteer_id) {
+        Alert.alert('Sorry', 'Another volunteer has already accepted this delivery.');
+        // Mark this notification as unavailable
+        await supabase
+          .from('notifications')
+          .update({ status: 'unavailable' })
+          .eq('id', notificationId);
+        await fetchNotifications();
+        return;
+      }
+      // Get volunteer details
+      const email = await AsyncStorage.getItem('userEmail');
+      // Assign this volunteer to the donation
+      const { error: updateError } = await supabase
+        .from('donation')
+        .update({ 
+          status: 'assigned',
+          volunteer_id: email
+        })
+        .eq('id', donationId);
+      if (updateError) throw updateError;
+      // Mark this notification as accepted
+      await supabase
+        .from('notifications')
+        .update({ status: 'accepted' })
+        .eq('id', notificationId);
+      // Mark all other volunteer notifications for this donation as unavailable
+      await supabase
+        .from('notifications')
+        .update({ status: 'unavailable' })
+        .eq('donation_id', donationId)
+        .neq('id', notificationId);
+      Alert.alert('Success', 'You have been assigned to deliver this donation!');
+      await fetchNotifications();
+    } catch (error) {
+      console.error('Error accepting delivery:', error);
+      Alert.alert('Error', 'Failed to accept delivery');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  interface AcceptNotification {
+    id: string;
+    donation_id: string;
+    volunteer_id: string;
+  }
+
+  const handleAccept = async (notification: AcceptNotification): Promise<void> => {
+    // Check if donation is already assigned
+    const { data: donation, error }: { data: { volunteer_id: string; status: string } | null; error: any } = await supabase
+      .from('donation')
+      .select('volunteer_id, status')
+      .eq('id', notification.donation_id)
+      .single();
+    if (error) {
+      Alert.alert('Error', 'Could not check donation status.');
+      return;
+    }
+    if (donation && donation.volunteer_id && donation.volunteer_id !== notification.volunteer_id) {
+      Alert.alert('Sorry', 'This delivery has already been accepted by another volunteer.');
+      // Optionally mark notification as read
+      await supabase.from('notifications').update({ isread: true }).eq('id', notification.id);
+      return;
+    }
+    if (donation && donation.volunteer_id === notification.volunteer_id) {
+      Alert.alert('Info', 'You have already accepted this delivery.');
+      return;
+    }
+    // Assign this volunteer
+    const { error: assignError }: { error: any } = await supabase
+      .from('donation')
+      .update({ volunteer_id: notification.volunteer_id, status: 'assigned' })
+      .eq('id', notification.donation_id);
+    if (assignError) {
+      Alert.alert('Error', 'Could not assign you to this delivery.');
+      return;
+    }
+    // Mark all notifications for this donation as read for this volunteer
+    await supabase.from('notifications').update({ isread: true }).eq('id', notification.id);
+    Alert.alert('Success', 'You have been assigned to this delivery!');
+    // Optionally, refresh notifications or navigate
   };
 
   useEffect(() => {
@@ -129,9 +225,18 @@ export default function NotificationsScreen() {
       >
         <View className="p-6">
           {notifications.map((notification) => (
-            <View 
+            <TouchableOpacity
               key={notification.id}
-              className="bg-white rounded-xl shadow-sm mb-4 overflow-hidden border border-gray-100"
+              className={`rounded-xl shadow-sm mb-4 overflow-hidden border border-gray-100 ${notification.isread ? 'bg-white' : 'bg-blue-50 border-blue-200'}`}
+              onPress={async () => {
+                if (!notification.isread) {
+                  await supabase.from('notifications').update({ isread: true }).eq('id', notification.id);
+                }
+                router.push({
+                  pathname: '/root/(tabs)/volunteer/details_not',
+                  params: { donationId: notification.donation_id, notificationId: notification.id }
+                });
+              }}
             >
               <View className="p-4">
                 <View className="flex-row items-start">
@@ -164,9 +269,10 @@ export default function NotificationsScreen() {
                           {notification.status}
                         </Text>
                       </View>
-                      {notification.type === 'donation' && notification.status === 'pending' && (
+                      {/* Only show Accept for volunteer-confirm notifications with pending status */}
+                      {notification.type === 'volunteer-confirm' && notification.status === 'pending' && (
                         <TouchableOpacity
-                          onPress={() => handleAcceptDonation(notification.id, notification.donation_id)}
+                          onPress={() => handleAcceptVolunteerDelivery(notification.id, notification.donation_id)}
                           disabled={loading}
                           className="bg-green-500 px-4 py-2 rounded-full"
                         >
@@ -187,7 +293,7 @@ export default function NotificationsScreen() {
                   </View>
                 </View>
               </View>
-            </View>
+            </TouchableOpacity>
           ))}
           
           {notifications.length === 0 && (

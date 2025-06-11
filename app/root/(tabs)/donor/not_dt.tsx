@@ -22,6 +22,7 @@ interface NotificationDetails {
   title: string;
   message: string;
   timestamp: string;
+  isread?: boolean;
   details: {
     organizationName: string;
     organizationImage: any;
@@ -39,9 +40,9 @@ export default function NotificationDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
 
-  // Mock data with more comprehensive timeline
+  // Ensure id is always a string
   const notification: NotificationDetails = {
-    id,
+    id: Array.isArray(id) ? id[0] : id ?? '',
     type: 'accepted',
     title: 'Donation Request Accepted',
     message: 'Food Bank Bangladesh has accepted your donation request',
@@ -88,7 +89,8 @@ export default function NotificationDetail() {
           status: 'pending'
         }
       ]
-    }
+    },
+    isread: false // Add default read status
   };
 
   const getStatusColor = (status?: string) => {
@@ -122,7 +124,7 @@ export default function NotificationDetail() {
       </View>
 
       <ScrollView className="flex-1 p-4">
-        <View className="bg-white rounded-xl p-4 mb-4 border border-gray-100">
+        <View className={`bg-white rounded-xl p-4 mb-4 border border-gray-100 ${notification.isread ? '' : 'bg-orange-50 border-orange-200'}`}>
           <Text className="text-xl font-rubik-bold text-gray-800">
             {notification.title}
           </Text>
@@ -186,6 +188,24 @@ export default function NotificationDetail() {
             </View>
           ))}
         </View>
+
+        {/* Accept/Reject Buttons */}
+        {notification.type === 'accepted' && !notification.isread && (
+          <View className="flex-row justify-center mt-6 space-x-4">
+            <TouchableOpacity
+              className="bg-green-500 px-6 py-3 rounded-lg"
+              onPress={() => {/* handle accept logic here */}}
+            >
+              <Text className="text-white font-bold">Accept Collection</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="bg-red-500 px-6 py-3 rounded-lg"
+              onPress={() => {/* handle reject logic here */}}
+            >
+              <Text className="text-white font-bold">Reject</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
 
       {/* Add Bottom Navigation */}

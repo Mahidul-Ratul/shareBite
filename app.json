@@ -11,11 +11,13 @@
     "ios": {
       "supportsTablet": true
     },
+    
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/images.jpeg",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.mahidulratul.shareBite"
     },
     "web": {
       "bundler": "metro",
@@ -36,7 +38,7 @@
       [
         "expo-font",
         {
-          "fonts" : [
+          "fonts": [
             "./assets/fonts/Rubik-Bold.ttf",
             "./assets/fonts/Rubik-ExtraBold.ttf",
             "./assets/fonts/Rubik-Medium.ttf",
@@ -45,11 +47,28 @@
             "./assets/fonts/Rubik-SemiBold.ttf"
           ]
         }
-      ]
-      
       ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "gradleVersion": "7.6",
+            "kotlinVersion": "1.7.22",
+            "javaVersion": "17"
+          }
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "f307702e-3eba-4a68-82cc-9f0b675a79d7"
+      }
     }
   }
 }

@@ -132,27 +132,20 @@ const OrganizationSignUp = () => {
           password: formData.password,
         });
         if (authError) throw authError;
-    
+
         let base64Image = '';
         if (formData.imageUri) {
-          // Fetch the image as a Blob
+          // Fetch the image as a Blob and convert to Base64
           const response = await fetch(formData.imageUri);
           const blob = await response.blob();
-    
-          // Convert the Blob to Base64
-          const reader = new FileReader();
-          reader.onloadend = async () => {
-            base64Image = reader.result as string; // This is the Base64 string
-    
-            // After converting the image, proceed with saving receiver data
-            await saveReceiverData(authData.user?.id, base64Image);
-          };
-          
-          reader.readAsDataURL(blob); // Start reading the Blob as Base64
-        } else {
-          // If no image, proceed with saving receiver data
-          await saveReceiverData(authData.user?.id);
+          base64Image = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
         }
+        await saveReceiverData(authData.user?.id, base64Image);
       } catch (error) {
         Alert.alert('Error', (error as any).message);
       } finally {

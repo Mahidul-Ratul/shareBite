@@ -271,7 +271,15 @@ const OrganizationSignUp = () => {
           base64Image = await base64Promise;
         }
     
-        // Insert data into the `volunteers` table
+        // Register with Supabase Auth first
+        const { data: authData, error: authError } = await supabase.auth.signUp({ email: formData.email, password: formData.password });
+        if (authError) {
+          Alert.alert('Error', authError.message);
+          setLoading(false);
+          return;
+        }
+    
+        // Insert data into the `volunteer` table
         const { error: volunteerError } = await supabase.from('volunteer').insert([{
           name: formData.volunteerName,
           email: formData.email,
@@ -280,11 +288,11 @@ const OrganizationSignUp = () => {
           location: `POINT(${formData.location.longitude} ${formData.location.latitude})`,
           image_url: base64Image, // Save the Base64 image
           status: 'pending_approval',
-          availability_days: formData.foodTypes.filter(day => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].includes(day)), // Selected days
-          availability_times: formData.foodTypes.filter(time => ['9:00 AM - 11:00 AM', '11:00 AM - 1:00 PM', '1:00 PM - 3:00 PM', '3:00 PM - 5:00 PM'].includes(time)), // Selected time slots
-          languages: formData.languages || '', // Languages spoken
-          experience: formData.experience || '', // Previous experience
-          associated_communities: formData.associatedCommunities || [], // Associated communities
+          availability_days: formData.foodTypes.filter(day => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].includes(day)),
+          availability_times: formData.foodTypes.filter(time => ['9:00 AM - 11:00 AM', '11:00 AM - 1:00 PM', '1:00 PM - 3:00 PM', '3:00 PM - 5:00 PM'].includes(time)),
+          languages: formData.languages || '',
+          experience: formData.experience || '',
+          associated_communities: formData.associatedCommunities || [],
           password: formData.password,
           confirm_password: formData.confirmPassword,
         }]);
