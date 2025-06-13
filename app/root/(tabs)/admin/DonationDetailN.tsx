@@ -111,6 +111,17 @@ const DonationDetail = () => {
           if (receiverError) throw receiverError;
           setReceiver(receiverData);
         }
+        // Fetch donor info
+        if (data?.donor_id) {
+          const { data: donorData, error: donorError } = await supabase
+            .from('users')
+            .select('name, phone, email')
+            .eq('id', data.donor_id)
+            .maybeSingle();
+          if (!donorError && donorData) {
+            setDonation((prev: any) => ({ ...prev, donorInfo: donorData }));
+          }
+        }
         // Set images if available
         if (data?.images && Array.isArray(data.images)) {
           setImages(data.images);
@@ -148,7 +159,8 @@ const DonationDetail = () => {
         .eq('id', id);
       if (error) throw error;
       if (status === 'approved') {
-        const { error: notifError } = await supabase.from('notifications').insert([
+        // Notify receiver
+        const { error: notifError1 } = await supabase.from('notifications').insert([
           {
             title: 'New Donation Offer',
             message: `You have received a new donation offer: ${donation.Types} - ${donation.Quantity}`,
@@ -160,8 +172,24 @@ const DonationDetail = () => {
             ngo_id: donation.ngo_id,
           }
         ]);
-        if (notifError) {
-          console.error('Notification Error:', notifError.message);
+        // Notify donor
+        const { error: notifError2 } = await supabase.from('notifications').insert([
+          {
+            title: 'Donation Approved',
+            message: `Your donation (${donation.Types} - ${donation.Quantity}) has been approved by the admin.`,
+            type: 'accepted',
+            isread: false,
+            for: 'donor',
+            donation_id: donation.id,
+            created_at: new Date().toISOString(),
+            donor_id: donation.donor_id,
+          }
+        ]);
+        if (notifError1) {
+          console.error('Receiver Notification Error:', notifError1.message);
+        }
+        if (notifError2) {
+          console.error('Donor Notification Error:', notifError2.message);
         }
       }
       Alert.alert('Success', `Donation has been ${status}`, [
@@ -187,6 +215,7 @@ const DonationDetail = () => {
         updateData.volunteer_id = selectedVolunteer.id;
       } else if (selectedOption === 'receiver') {
         updateData.assigned_to = 'receiver';
+        updateData.volunteer_id = 'ngo' // Set volunteer_id to 'ngo' if NGO collects
       }
       const { error } = await supabase
         .from('donation')
@@ -224,7 +253,7 @@ const DonationDetail = () => {
     }
     setIsLoading(true);
     try {
-      // Send notification to each selected volunteer
+      // For each selected volunteer, insert a unique notification row
       const notifications = selectedVolunteers.map((vol) => ({
         title: 'New Delivery Opportunity',
         message: `A new donation (${donation.Types} - ${donation.Quantity}) is available for delivery.`,
@@ -233,9 +262,10 @@ const DonationDetail = () => {
         for: 'volunteer',
         donation_id: donation.id,
         created_at: new Date().toISOString(),
-        volunteer_id: vol.id,
+        volunteer_id: vol.id, // Unique per volunteer
         ngo_id: donation.ngo_id,
       }));
+      // Insert all notifications at once
       const { error } = await supabase.from('notifications').insert(notifications);
       if (error) throw error;
       Alert.alert('Success', 'Selected volunteers have been notified.');
@@ -260,11 +290,18 @@ const DonationDetail = () => {
           textColor: 'text-yellow-800',
         };
       case 'approved':
+        return {
+          color: '#fbbf24',
+          icon: 'hourglass-empty',
+          text: 'Waiting for Receiver Confirmation',
+          bg: 'bg-yellow-50',
+          textColor: 'text-yellow-800',
+        };
       case 'approvedF':
         return {
           color: '#16a34a',
           icon: 'check-circle',
-          text: 'Approved – Awaiting Assignment',
+          text: 'Approved – Assign Volunteer or NGO',
           bg: 'bg-green-50',
           textColor: 'text-green-800',
         };
@@ -272,9 +309,9 @@ const DonationDetail = () => {
         return {
           color: '#3b82f6',
           icon: 'assignment-ind',
-          text: donation.volunteer_id
+          text: donation.volunteer_id && donation.volunteer_id !== 'ngo'
             ? 'Assigned to Volunteer'
-            : donation.assigned_to === 'receiver'
+            : donation.volunteer_id === 'ngo' || donation.assigned_to === 'receiver'
             ? 'Assigned to NGO'
             : 'Assigned',
           bg: 'bg-blue-50',
@@ -304,14 +341,48 @@ const DonationDetail = () => {
           bg: 'bg-red-50',
           textColor: 'text-red-800',
         };
-      default:
+      case 'volunteer is assigned':
         return {
-          color: '#6b7280',
-          icon: 'info',
-          text: 'Unknown Status',
-          bg: 'bg-gray-100',
-          textColor: 'text-gray-700',
+          color: '#3b82f6',
+          icon: 'local-shipping',
+          text: 'Volunteer Assigned - Awaiting Pickup',
+          bg: 'bg-blue-50',
+          textColor: 'text-blue-800',
         };
+      case 'on the way to receive food':
+        return {
+          color: '#3b82f6',
+          icon: 'directions-run',
+          text: 'Volunteer On The Way To Donor',
+          bg: 'bg-blue-50',
+          textColor: 'text-blue-800',
+        };
+      case 'food collected':
+        return {
+          color: '#f59e42',
+          icon: 'restaurant',
+          text: 'Food Collected By Volunteer',
+          bg: 'bg-orange-50',
+          textColor: 'text-orange-800',
+        };
+      case 'on the way to deliver food':
+        return {
+          color: '#6366f1',
+          icon: 'delivery-dining',
+          text: 'Volunteer Delivering Food',
+          bg: 'bg-indigo-50',
+          textColor: 'text-indigo-800',
+        };
+      case 'delivered the food':
+        return {
+          color: '#16a34a',
+          icon: 'check-circle',
+          text: 'Food Delivered To Receiver',
+          bg: 'bg-green-50',
+          textColor: 'text-green-800',
+        };
+      default:
+        return null;
     }
   };
 
@@ -458,11 +529,23 @@ const DonationDetail = () => {
             </View>
           </View>
 
-          {/* Status Banner */}
-          <View className={`mx-6 mt-6 rounded-lg p-4 flex-row items-center ${statusBanner.bg}`}>  
-            <MaterialIcons name={statusBanner.icon as any} size={28} color={statusBanner.color} />
-            <Text className={`ml-3 font-bold text-lg ${statusBanner.textColor}`}>{statusBanner.text}</Text>
-          </View>
+          {/* Status Banner - only show if known status */}
+          {statusBanner && (
+            <View className={`mx-6 mt-6 rounded-2xl p-6 flex-row items-center shadow-lg border-2 border-white ${statusBanner.bg}`}
+              style={{ elevation: 6 }}
+            >
+              <MaterialIcons name={statusBanner.icon as any} size={32} color={statusBanner.color} />
+              <Text className={`ml-4 font-extrabold text-xl ${statusBanner.textColor}`}>{statusBanner.text}</Text>
+            </View>
+          )}
+
+          {/* Volunteer Information - show full info if available */}
+          {donation.volunteer_id && donation.volunteer_id !== 'ngo' && (
+            <View className="mt-6 bg-gradient-to-r from-green-100 via-blue-100 to-purple-100 rounded-2xl p-6 shadow-lg border border-green-200">
+              <Text className="text-lg font-extrabold text-green-900 mb-3">Volunteer Information</Text>
+              <VolunteerInfoCard volunteerId={donation.volunteer_id} />
+            </View>
+          )}
 
           {/* Admin Actions - only show if pending */}
           {donation.status === 'pending' && (
@@ -491,8 +574,8 @@ const DonationDetail = () => {
             </View>
           )}
 
-          {/* Assignment Section - only show if approved/approvedF */}
-          {(donation.status === 'approved' || donation.status === 'approvedF') && (
+          {/* Assignment Section - only show if approvedF */}
+          {donation.status === 'approvedF' && (
             <View className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6 mt-6">
               <View className="flex-row items-center">
                 <MaterialIcons name="check-circle" size={24} color="#16a34a" />
@@ -556,7 +639,7 @@ const DonationDetail = () => {
                 <Text className="text-blue-800 font-bold ml-2">
                   {donation.volunteer_id
                     ? 'Assigned to Volunteer'
-                    : donation.assigned_to === 'receiver'
+                    : donation.volunteer_id === 'ngo' || donation.assigned_to === 'receiver'
                     ? 'Assigned to NGO'
                     : 'Assigned'}
                 </Text>
@@ -568,6 +651,61 @@ const DonationDetail = () => {
                   ? 'Your organization is responsible for collection.'
                   : 'Assignment in progress.'}
               </Text>
+            </View>
+          )}
+
+          {/* Delivery Workflow Statuses */}
+          {[
+            'volunteer is assigned',
+            'on the way to receive food',
+            'food collected',
+            'on the way to deliver food',
+            'delivered the food',
+          ].includes(donation.status) && (
+            <View className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 mt-6">
+              <View className="flex-row items-center">
+                <MaterialIcons name="local-shipping" size={24} color="#3b82f6" />
+                <Text className="text-blue-800 font-bold ml-2">
+                  {(() => {
+                    switch (donation.status) {
+                      case 'volunteer is assigned':
+                        return 'Volunteer Assigned - Awaiting Pickup';
+                      case 'on the way to receive food':
+                        return 'Volunteer On The Way To Donor';
+                      case 'food collected':
+                        return 'Food Collected By Volunteer';
+                      case 'on the way to deliver food':
+                        return 'Volunteer Delivering Food';
+                      case 'delivered the food':
+                        return 'Food Delivered To Receiver';
+                      default:
+                        return donation.status;
+                    }
+                  })()}
+                </Text>
+              </View>
+              <Text className="text-blue-700 mt-2">
+                {(() => {
+                  switch (donation.status) {
+                    case 'volunteer is assigned':
+                      return 'A volunteer has been assigned and will collect the food soon.';
+                    case 'on the way to receive food':
+                      return 'The volunteer is on the way to the donor location.';
+                    case 'food collected':
+                      return 'The food has been collected and is ready for delivery.';
+                    case 'on the way to deliver food':
+                      return 'The volunteer is delivering the food to the receiver.';
+                    case 'delivered the food':
+                      return 'The food has been delivered to the receiver. Thank you!';
+                    default:
+                      return '';
+                  }
+                })()}
+              </Text>
+              {/* Optionally show volunteer info if available */}
+              {donation.volunteer_id && (
+                <Text className="text-blue-600 mt-2 text-xs">Volunteer ID: {donation.volunteer_id}</Text>
+              )}
             </View>
           )}
 
@@ -698,3 +836,41 @@ const DonationDetail = () => {
 };
 
 export default DonationDetail;
+
+// NOTE: All volunteer assignment and notification logic below uses volunteer.id from the volunteer table, not email or auth id.
+// This ensures notifications and assignments are unique and correct per volunteer.
+// When assigning to NGO, volunteer_id is set to 'ngo'.
+// Assignment options are only shown for status 'approvedF'.
+
+// Helper component to fetch and display volunteer info
+function VolunteerInfoCard({ volunteerId }: { volunteerId: string }) {
+  const [volunteer, setVolunteer] = React.useState<any>(null);
+  React.useEffect(() => {
+    (async () => {
+      if (!volunteerId) return;
+      const { data, error } = await supabase
+        .from('volunteer')
+        .select('name, phone, email')
+        .eq('id', volunteerId)
+        .maybeSingle();
+      if (!error && data) setVolunteer(data);
+    })();
+  }, [volunteerId]);
+  if (!volunteer) return <Text className="text-gray-500">Loading volunteer info...</Text>;
+  return (
+    <View className="space-y-3">
+      <View className="flex-row items-center">
+        <MaterialIcons name="person" size={22} color="#16a34a" />
+        <Text className="text-gray-800 ml-3 text-base font-semibold">{volunteer.name || 'N/A'}</Text>
+      </View>
+      <View className="flex-row items-center">
+        <MaterialIcons name="phone" size={22} color="#16a34a" />
+        <Text className="text-gray-700 ml-3 text-base">{volunteer.phone || 'N/A'}</Text>
+      </View>
+      <View className="flex-row items-center">
+        <MaterialIcons name="email" size={22} color="#16a34a" />
+        <Text className="text-gray-700 ml-3 text-base">{volunteer.email || 'N/A'}</Text>
+      </View>
+    </View>
+  );
+}

@@ -26,20 +26,38 @@ export default function NotificationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Helper to get volunteer id from volunteer table using email
+const getVolunteerId = async () => {
+  const email = await AsyncStorage.getItem('userEmail');
+  if (!email) throw new Error('No email found');
+  const { data, error } = await supabase
+    .from('volunteer')
+    .select('id')
+    .eq('email', email)
+    .maybeSingle();
+  if (error || !data) throw new Error('Volunteer not found');
+  return data.id;
+};
+
   const fetchNotifications = async () => {
     try {
-      const email = await AsyncStorage.getItem('userEmail');
-      if (!email) return;
-
+      const volunteerId = await getVolunteerId();
       // Fetch notifications for this volunteer (direct or broadcast)
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
-        .or(`volunteer_id.eq.${email},for.eq.volunteer,for.eq.all`)
+        .or(`volunteer_id.eq.${volunteerId},for.eq.volunteer,for.eq.all`)
         .order('created_at', { ascending: false });
-
       if (error) throw error;
-      setNotifications(data || []);
+      // Only show notifications where 'for' is 'volunteer' or 'all', and filter out 'Volunteer Assigned' title
+      const filtered = (data || []).filter(
+        (n) =>
+          (n.for === 'volunteer' || n.for === 'all') &&
+          n.title !== 'Volunteer Assigned' &&
+          n.status !== 'declined' &&
+          n.status !== 'unavailable'
+      );
+      setNotifications(filtered);
     } catch (error) {
       console.error('Error fetching notifications:', error);
       Alert.alert('Error', 'Failed to load notifications');
@@ -51,7 +69,7 @@ export default function NotificationsScreen() {
     try {
       // Check if donation is still available
       const { data: donationData, error: donationError } = await supabase
-        .from('donations')
+        .from('donation')
         .select('status')
         .eq('id', donationId)
         .single();
@@ -70,16 +88,11 @@ export default function NotificationsScreen() {
         return;
       }
 
-      // Get volunteer details
-      const email = await AsyncStorage.getItem('userEmail');
-      
-      // Update donation status and assign volunteer
+      const volunteerId = await getVolunteerId();
+      // Assign volunteer to donation
       const { error: updateError } = await supabase
-        .from('donations')
-        .update({ 
-          status: 'assigned',
-          assigned_volunteer: email
-        })
+        .from('donation')
+        .update({ status: 'assigned', volunteer_id: volunteerId })
         .eq('id', donationId);
 
       if (updateError) throw updateError;
@@ -120,14 +133,13 @@ export default function NotificationsScreen() {
         await fetchNotifications();
         return;
       }
-      // Get volunteer details
-      const email = await AsyncStorage.getItem('userEmail');
+      const volunteerId = await getVolunteerId();
       // Assign this volunteer to the donation
       const { error: updateError } = await supabase
         .from('donation')
         .update({ 
           status: 'assigned',
-          volunteer_id: email
+          volunteer_id: volunteerId
         })
         .eq('id', donationId);
       if (updateError) throw updateError;

@@ -153,6 +153,16 @@ export default function AvailableTasksScreen() {
                         <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Profile</Text>
                       </TouchableOpacity>
                     </Link>
+            
+                    {/* Add navigation to ongoing donation page in the bottom navigation */}
+                    <Link href="./ongoing-donation" asChild>
+                      <TouchableOpacity className="items-center flex-1">
+                        <View className="relative">
+                          <FontAwesome5 name="tasks" size={24} color="#6B7280" />
+                        </View>
+                        <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Ongoing</Text>
+                      </TouchableOpacity>
+                    </Link>
                   </View>
     </View>
     

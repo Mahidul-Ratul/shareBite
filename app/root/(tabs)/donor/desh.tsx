@@ -39,13 +39,16 @@ const DonorDashboard = () => {
     capacity: string;
     image_url?: string;
   }
-
+   const [news, setNews] = useState<any[]>([]);
+   const [newsLoading, setNewsLoading] = useState(true);
   const [donor, setDonor] = useState<Donor[]>([]);
   const [receivers, setReceivers] = useState<Receiver[]>([]); // State for receivers
   const [loading, setLoading] = useState(true);
   const [loadingReceivers, setLoadingReceivers] = useState(true); // Loading state for receivers
   const [searchQuery, setSearchQuery] = useState("");
+  const [topDonors, setTopDonors] = useState<any[]>([]);
   const router = useRouter();
+
   useEffect(() => {
     const fetchDonor = async () => {
       try {
@@ -107,6 +110,49 @@ const DonorDashboard = () => {
     fetchReceivers();
   }, []);
 
+  useEffect(() => {
+      // Fetch news/events
+      const fetchNews = async () => {
+        setNewsLoading(true);
+        const { data, error } = await supabase
+          .from('news')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(3);
+        if (!error && data) setNews(data);
+        setNewsLoading(false);
+      };
+      fetchNews();
+    }, []);
+
+    useEffect(() => {
+      // Fetch top donors by donation count
+      const fetchTopDonors = async () => {
+        // Get all users and their donation counts
+        const { data: users, error: userError } = await supabase
+          .from('users')
+          .select('id, fullName, profileImage, address');
+        if (userError || !users) return;
+        // For each user, count their donations
+        const donorCounts = await Promise.all(users.map(async (user: any) => {
+          const { count } = await supabase
+            .from('donation')
+            .select('id', { count: 'exact', head: true })
+            .eq('donor_id', user.id);
+          return { ...user, donationCount: count || 0 };
+        }));
+        // Sort and take top 3
+        const sorted = donorCounts.sort((a, b) => b.donationCount - a.donationCount).slice(0, 3);
+        setTopDonors(sorted);
+      };
+      fetchTopDonors();
+    }, []);
+
+  // Filtered receivers for search
+  const filteredReceivers = receivers.filter((receiver) =>
+    receiver.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -137,16 +183,35 @@ const DonorDashboard = () => {
       </View>
       {/* Search Bar */}
       <View className="px-4 ">
-                <View className="flex-row items-center bg-white rounded-xl px-4 py-2 border border-gray-100">
-                  <Ionicons name="search" size={20} color="#9CA3AF" />
-                  <TextInput
-                    placeholder="Search organizations"
-                    className="flex-1 ml-2 font-rubik text-gray-600"
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                  />
-                </View>
-              </View>
+        <View className="flex-row items-center bg-white rounded-xl px-4 py-2 border border-gray-100">
+          <Ionicons name="search" size={20} color="#9CA3AF" />
+          <TextInput
+            placeholder="Search organizations"
+            className="flex-1 ml-2 font-rubik text-gray-600"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
+        {/* Search Results Dropdown */}
+        {searchQuery.length > 0 && (
+          <ScrollView style={{ maxHeight: 200, backgroundColor: '#fff', borderRadius: 8, marginTop: 4, borderWidth: 1, borderColor: '#eee' }}>
+            {filteredReceivers.length === 0 ? (
+              <Text style={{ padding: 12, color: '#888' }}>No organizations found.</Text>
+            ) : (
+              filteredReceivers.map((receiver) => (
+                <TouchableOpacity
+                  key={receiver.id}
+                  style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#f3f3f3' }}
+                  onPress={() => router.push({ pathname: './receiver_profile', params: { id: receiver.id } })}
+                >
+                  <Text style={{ color: '#222', fontWeight: 'bold' }}>{receiver.name}</Text>
+                  <Text style={{ color: '#888', fontSize: 12 }}>{receiver.type}</Text>
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+        )}
+      </View>
       <ScrollView className="flex-1">
       {/* Donate Banner */}
       <View className="px-4 pt-4">
@@ -173,27 +238,84 @@ const DonorDashboard = () => {
               </View>
       {/* Top Donors */}
       <View className="mt-6">
-                <View className="px-4 flex-row justify-between items-center mb-3">
-                  <Text className="font-rubik-bold text-lg text-gray-800">Top Donors</Text>
-                  <TouchableOpacity>
-                    <Text className="text-orange-500 font-rubik-medium">View All</Text>
-                  </TouchableOpacity>
-                </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mx-5 mt-3">
-        {donor.map((donor) => (
-        <TouchableOpacity
-          key={donor.id}
-          onPress={() => router.push(`./donor/${donor.id}`)}
-          className="items-center mr-4"
-        >
-          <Image source={donor.profileImage ? { uri: donor.profileImage } : require("@/assets/images/avatar.png")} className="w-12 h-12 rounded-full" />
-          <Text className="text-sm text-gray-700 font-rubik-light mt-1">{donor.fullName}</Text>
-        </TouchableOpacity>
-        ))}
-      </ScrollView>
+        <View className="px-4 flex-row justify-between items-center mb-3">
+          <Text className="font-rubik-bold text-lg text-gray-800">Top Donors</Text>
+          <TouchableOpacity>
+            <Text className="text-orange-500 font-rubik-medium">View All</Text>
+          </TouchableOpacity>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mx-5 mt-3">
+          {topDonors.map((donor, idx) => (
+            <View key={donor.id} className="items-center mr-4 bg-white p-4 rounded-xl shadow border border-gray-100 w-40">
+              <Image source={donor.profileImage ? { uri: donor.profileImage } : require("@/assets/images/avatar.png")} className="w-16 h-16 rounded-full mb-2" />
+              <Text className="font-rubik-bold text-gray-800 text-center">{donor.fullName}</Text>
+              <Text className="text-xs text-gray-500 text-center mb-1">{donor.address}</Text>
+              <View className="flex-row items-center justify-center mt-1">
+                <MaterialIcons name="star" size={18} color="#facc15" />
+                <Text className="ml-1 text-green-700 font-bold">{donor.donationCount} Donations</Text>
+              </View>
+            </View>
+          ))}
+        </ScrollView>
       </View>
+       <View className="p-5 rounded-lg mb-5">
+                      <View className="flex-row justify-between items-center mb-4">
+                        <Text className="text-2xl font-rubik-bold text-gray-800">Recent Events & Stories</Text>
+                        <TouchableOpacity onPress={() => router.push("../All_News")}>
+                          <Text className="text-green-600 font-rubik-medium">View All</Text>
+                        </TouchableOpacity>
+                      </View>
+                      {newsLoading ? (
+                          <Text className="text-gray-400 text-center">Loading...</Text>
+                        ) : (
+                        <ScrollView 
+                          horizontal 
+                          showsHorizontalScrollIndicator={false} 
+                          className="mb-3"
+                        >
+                          {news.map((item, idx) => (
+                            <View key={item.id || idx} className="bg-white p-4 rounded-2xl shadow-md mr-4 w-72 border border-gray-100">
+                              <View className="absolute top-5 right-5 bg-black/50 px-3 py-1 rounded-full z-10">
+                                <Text className="text-white font-rubik-medium text-xs">{item.created_at ? new Date(item.created_at).toLocaleDateString() : ''}</Text>
+                              </View>
+                              <Image
+                                source={{ uri: item.picture.startsWith('data:') ? item.picture : `data:image/jpeg;base64,${item.picture}` }}
+                                className="w-full h-48 rounded-xl mb-3"
+                                resizeMode="cover"
+                              />
+                              <View className="flex-row justify-between items-center mb-2">
+                                <View className={`px-3 py-1 rounded-full ${item.tag === 'Featured' ? 'bg-blue-50' : item.tag === 'Holiday Special' ? 'bg-orange-50' : 'bg-green-50'}`}>
+                                  <Text className={`font-rubik-medium text-sm ${item.tag === 'Featured' ? 'text-blue-600' : item.tag === 'Holiday Special' ? 'text-orange-600' : 'text-green-600'}`}>{item.tag || 'Latest Update'}</Text>
+                                </View>
+                                <View className="flex-row items-center">
+                                  <MaterialIcons name="restaurant" size={16} color="#16a34a" />
+                                  <Text className="text-green-600 font-rubik text-sm ml-1">{item.title}</Text>
+                                </View>
+                              </View>
+                              <Text className="text-lg font-rubik-medium text-gray-800 mb-2">
+                                {item.title}
+                              </Text>
+                              <Text className="text-gray-600 font-rubik text-sm mb-3">
+                                {item.news}
+                              </Text>
+                              <View className="flex-row justify-between items-center">
+                                <View className="flex-row items-center">
+                                  <MaterialIcons name="schedule" size={16} color="#6B7280" />
+                                  <Text className="text-gray-500 font-rubik text-sm ml-1">{item.created_at ? new Date(item.created_at).toLocaleDateString() : ''}</Text>
+                                </View>
+                                <View className="flex-row items-center">
+                                  <MaterialIcons name="location-on" size={16} color="#6B7280" />
+                                  <Text className="text-gray-500 font-rubik text-sm ml-1">{item.Location || 'N/A'}</Text>
+                                </View>
+                              </View>
+                            </View>
+                          ))}
+                        </ScrollView>
+                        )}
+                      </View>
       {/* Featured Organizations */}
        <View className="px-4 mt-6 mb-24">
+                  
                 <View className="flex-row justify-between items-center mb-3">
                   <Text className="font-rubik-bold text-lg text-gray-800">Featured Organizations</Text>
                   <TouchableOpacity>
@@ -206,6 +328,7 @@ const DonorDashboard = () => {
               <TouchableOpacity
                 key={receiver.id}
                 className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100"
+                onPress={() => router.push({ pathname: './receiver_profile', params: { id: receiver.id } })}
               >
                 <View className="flex-row items-center mb-3">
                   <Image
@@ -265,7 +388,7 @@ const DonorDashboard = () => {
   <Link href="./d_history" asChild>
     <TouchableOpacity className="items-center flex-1">
       <FontAwesome5 name="history" size={24} color="#6B7280" />
-      <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">History</Text>
+      <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">My Donations</Text>
     </TouchableOpacity>
   </Link>
   <Link href="./notification" asChild>

@@ -404,7 +404,7 @@ export default function VolunteerHome() {
           </TouchableOpacity>
         </Link>
 
-        <Link href="./available-tasks" asChild>
+        <Link href="./ongoing-donation" asChild>
           <TouchableOpacity className="items-center flex-1">
             <View className="bg-orange-500 p-3 rounded-full -mt-8 border-4 border-white shadow-xl">
               <FontAwesome5 name="plus" size={24} color="white" />
@@ -428,7 +428,7 @@ export default function VolunteerHome() {
           </TouchableOpacity>
         </Link>
 
-        <Link href="./not" asChild>
+        <Link href="./vol_pro" asChild>
           <TouchableOpacity
             className="items-center flex-1"
             activeOpacity={0.7}

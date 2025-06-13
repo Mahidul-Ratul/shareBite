@@ -1,103 +1,48 @@
-import React, { useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity, Image } from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Text, ScrollView, TouchableOpacity, Image, ActivityIndicator } from "react-native";
 import { Ionicons, MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
 import { Link, useRouter } from "expo-router";
-
-interface DonationItem {
-  name: string;
-  quantity: string;
-}
-
-interface Donation {
-  id: string;
-  created_at: string;
-  status: "completed" | "pending" | "in_progress";
-  items: DonationItem[];
-  organization: string;
-  image: any; // for require() type
-  volunteer?: {
-    name: string;
-    phone: string;
-    image: any;
-  };
-}
+import { supabase } from '../../../../constants/supabaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function DonationHistory() {
   const router = useRouter();
   const [activeFilter, setActiveFilter] = useState('all');
+  const [donations, setDonations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const donations: Donation[] = [
-    {
-      id: '1',
-      created_at: '2024-04-26',
-      status: 'completed',
-      items: [
-        { name: 'Rice', quantity: '10 kg' },
-        { name: 'Dal', quantity: '5 kg' },
-      ],
-      organization: 'Food Bank Bangladesh',
-      image: require('@/assets/images/ngo.jpg'),
-      volunteer: {
-        name: 'Abdul Karim',
-        phone: '+880 1712345678',
-        image: require('@/assets/images/hasi.jpg')
+  useEffect(() => {
+    const fetchDonations = async () => {
+      setLoading(true);
+      const donorId = await AsyncStorage.getItem('userId');
+      if (!donorId) {
+        setDonations([]);
+        setLoading(false);
+        return;
       }
-    },
-    {
-      id: '2',
-      created_at: '2024-04-25',
-      status: 'in_progress',
-      items: [
-        { name: 'Bread', quantity: '20 pieces' },
-        { name: 'Milk', quantity: '10 L' },
-      ],
-      organization: 'Shelter Home',
-      image: require('@/assets/images/ngo.jpg'),
-      volunteer: {
-        name: 'Sarah Akter',
-        phone: '+880 1812345678',
-        image: require('@/assets/images/hasi.jpg')
-      }
-    },
-    {
-      id: '3',
-      created_at: '2024-04-24',
-      status: 'pending',
-      items: [
-        { name: 'Fruits', quantity: '5 kg' },
-        { name: 'Vegetables', quantity: '8 kg' },
-      ],
-      organization: 'Child Care Center',
-      image: require('@/assets/images/ngo.jpg')
-    }
-  ];
+      const { data, error } = await supabase
+        .from('donation')
+        .select('*')
+        .eq('donor_id', donorId)
+        .order('Producing', { ascending: false });
+      if (!error && data) setDonations(data);
+      setLoading(false);
+    };
+    fetchDonations();
+  }, []);
 
-  const getStatusStyle = (status: Donation['status']) => {
-    switch (status) {
-      case 'completed':
-        return {
-          bg: 'bg-green-100',
-          text: 'text-green-700',
-          icon: 'check-circle'
-        };
-      case 'in_progress':
-        return {
-          bg: 'bg-blue-100',
-          text: 'text-blue-700',
-          icon: 'clock'
-        };
-      case 'pending':
-        return {
-          bg: 'bg-yellow-100',
-          text: 'text-yellow-700',
-          icon: 'hourglass-start'
-        };
-    }
+  const getStatus = (status: string | null) => {
+    if (!status) return { label: 'Pending', color: '#facc15', icon: 'hourglass-start' };
+    if (status === 'delivered the food') return { label: 'Completed', color: '#22c55e', icon: 'check-circle' };
+    return { label: 'In Progress', color: '#3b82f6', icon: 'clock' };
   };
 
   const filteredDonations = activeFilter === 'all' 
     ? donations 
-    : donations.filter(d => d.status === activeFilter);
+    : donations.filter(d => {
+        const statusObj = getStatus(d.status);
+        return statusObj.label.toLowerCase().replace(' ', '_') === activeFilter;
+      });
 
   return (
     <View className="flex-1 bg-gray-50">
@@ -112,7 +57,6 @@ export default function DonationHistory() {
             <MaterialIcons name="keyboard-arrow-left" size={24} color="#4B5563" />
           </TouchableOpacity>
         </View>
-        
         {/* Filter Tabs */}
         <ScrollView 
           horizontal 
@@ -138,89 +82,73 @@ export default function DonationHistory() {
           ))}
         </ScrollView>
       </View>
-
       {/* Donation List */}
+      {loading ? (
+        <View className="flex-1 items-center justify-center"><ActivityIndicator size="large" color="#22c55e" /></View>
+      ) : (
       <ScrollView 
         className="flex-1" 
         contentContainerStyle={{ padding: 16 }}
         showsVerticalScrollIndicator={false}
       >
         <View className="space-y-4">
-          {filteredDonations.map((donation) => (
+          {filteredDonations.map((donation) => {
+            const statusObj = getStatus(donation.status);
+            let images: string[] = [];
+            if (donation.Image) {
+              try {
+                images = typeof donation.Image === 'string' ? JSON.parse(donation.Image) : donation.Image;
+                if (!Array.isArray(images)) images = [images];
+              } catch {
+                images = [donation.Image];
+              }
+            }
+            return (
             <TouchableOpacity 
               key={donation.id}
               className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100"
-              onPress={() => router.push(`./donation-details/${donation.id}`)}
+              onPress={() => router.push({ pathname: './not_dt', params: { donation_id: donation.id } })}
             >
               <View className="flex-row items-center mb-3">
-                <Image 
-                  source={donation.image}
-                  className="w-16 h-16 rounded-xl"
-                />
+                {images[0] ? (
+                  <Image 
+                    source={{ uri: images[0].startsWith('data:') ? images[0] : `data:image/jpeg;base64,${images[0]}` }}
+                    className="w-16 h-16 rounded-xl"
+                  />
+                ) : (
+                  <View className="w-16 h-16 rounded-xl bg-gray-200 items-center justify-center">
+                    <FontAwesome5 name="image" size={24} color="#9ca3af" />
+                  </View>
+                )}
                 <View className="flex-1 ml-3">
                   <Text className="font-rubik-bold text-gray-800">
-                    {donation.organization}
+                    {donation.Location}
                   </Text>
                   <Text className="text-xs font-rubik text-gray-500 mt-1">
-                    {new Date(donation.created_at).toLocaleDateString('en-US', {
+                    {donation.Producing ? new Date(donation.Producing).toLocaleDateString('en-US', {
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric'
-                    })}
+                    }) : ''}
                   </Text>
                 </View>
-                <View className={`px-3 py-1 rounded-full ${getStatusStyle(donation.status).bg}`}>
+                <View className={`px-3 py-1 rounded-full`} style={{ backgroundColor: statusObj.color }}>
                   <View className="flex-row items-center space-x-1">
                     <FontAwesome5 
-                      name={getStatusStyle(donation.status).icon} 
+                      name={statusObj.icon} 
                       size={12} 
-                      color={getStatusStyle(donation.status).text.replace('text-', '')} 
+                      color="#fff" 
                       solid 
                     />
-                    <Text className={`text-xs font-rubik-medium ${getStatusStyle(donation.status).text}`}>
-                      {donation.status.replace('_', ' ').charAt(0).toUpperCase() + 
-                       donation.status.slice(1)}
+                    <Text className={`text-xs font-rubik-medium`} style={{ color: '#fff' }}>
+                      {statusObj.label}
                     </Text>
                   </View>
                 </View>
               </View>
-
-              <View className="border-t border-gray-100 pt-3">
-                <Text className="font-rubik-medium text-gray-700 mb-2">
-                  Donated Items:
-                </Text>
-                <View className="flex-row flex-wrap">
-                  {donation.items.map((item, index) => (
-                    <View key={index} className="flex-row items-center mr-4 mb-1">
-                      <View className="w-2 h-2 rounded-full bg-green-500 mr-2" />
-                      <Text className="text-gray-600 font-rubik">
-                        {item.quantity} {item.name}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-
-              {donation.volunteer && (
-                <View className="border-t border-gray-100 mt-3 pt-3">
-                  <Text className="font-rubik-medium text-gray-700 mb-2">
-                    Volunteer Assigned:
-                  </Text>
-                  <View className="flex-row items-center">
-                    <Image 
-                      source={donation.volunteer.image}
-                      className="w-8 h-8 rounded-full"
-                    />
-                    <Text className="ml-2 text-sm text-gray-600 font-rubik">
-                      {donation.volunteer.name}
-                    </Text>
-                  </View>
-                </View>
-              )}
-
               <TouchableOpacity 
                 className="flex-row items-center justify-end mt-3"
-                onPress={() => router.push(`./donation-details/${donation.id}`)}
+                onPress={() => router.push({ pathname: './not_dt', params: { donation_id: donation.id } })}
               >
                 <Text className="text-green-600 font-rubik-medium mr-1">
                   View Details
@@ -228,10 +156,10 @@ export default function DonationHistory() {
                 <MaterialIcons name="arrow-forward-ios" size={14} color="#16a34a" />
               </TouchableOpacity>
             </TouchableOpacity>
-          ))}
+          )})}
         </View>
       </ScrollView>
-
+      )}
       {/* Bottom Navigation */}
       <View className="flex-row justify-between items-center bg-white py-3 px-6 border-t border-gray-200">
         <Link href="./desh" asChild>
@@ -240,14 +168,12 @@ export default function DonationHistory() {
             <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Home</Text>
           </TouchableOpacity>
         </Link>
-
         <Link href="./news" asChild>
           <TouchableOpacity className="items-center flex-1">
             <FontAwesome5 name="newspaper" size={24} color="#6B7280" />
             <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">News</Text>
           </TouchableOpacity>
         </Link>
-
         <Link href=".././Donate" asChild>
           <TouchableOpacity className="items-center flex-1">
             <View className="bg-orange-500 p-3 rounded-full -mt-8 border-4 border-white shadow-lg">
@@ -256,7 +182,6 @@ export default function DonationHistory() {
             <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Donate</Text>
           </TouchableOpacity>
         </Link>
-
         <Link href="./notifications" asChild>
           <TouchableOpacity className="items-center flex-1">
             <View className="relative">
@@ -268,7 +193,6 @@ export default function DonationHistory() {
             <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Alerts</Text>
           </TouchableOpacity>
         </Link>
-
         <Link href="./d_history" asChild>
           <TouchableOpacity className="items-center flex-1">
             <FontAwesome5 name="history" size={24} color="#F97316" />

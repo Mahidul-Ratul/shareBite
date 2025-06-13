@@ -21,6 +21,7 @@ const ManageDonations = () => {
     status?: string;
   }[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTab, setSelectedTab] = useState<'all' | 'pending' | 'ongoing' | 'completed'>('all');
   const router = useRouter();
 
   // Fetch donations from the "donation" table
@@ -38,12 +39,24 @@ const ManageDonations = () => {
     fetchDonations();
   }, []);
 
-  // Filter donations based on the search query
-  const filteredDonations = donations.filter(
-    (donation) =>
+  // Filter donations based on the selected tab and search query
+  const filteredDonations = donations.filter((donation) => {
+    // Treat null/undefined status as 'pending'
+    const status = donation.status ?? 'pending';
+    // Tab filtering
+    if (selectedTab === 'pending') {
+      if (status !== 'pending') return false;
+    } else if (selectedTab === 'completed') {
+      if (status !== 'delivered the food') return false;
+    } else if (selectedTab === 'ongoing') {
+      if (status === 'pending' || status === 'delivered the food') return false;
+    }
+    // Search filtering
+    return (
       donation.Name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       donation.Location?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+    );
+  });
   type Donation = {
     id: number; // Changed to match the type in donations array
     Name?: string;
@@ -176,11 +189,29 @@ const ManageDonations = () => {
               <Text className="text-white ml-2">{donations.length} Total</Text>
             </View>
             <View className="flex-row space-x-2">
-              <TouchableOpacity className="bg-white/10 px-4 py-2 rounded-xl">
+              <TouchableOpacity
+                className={`bg-white/10 px-4 py-2 rounded-xl ${selectedTab === 'all' ? 'border-2 border-white' : ''}`}
+                onPress={() => setSelectedTab('all')}
+              >
                 <Text className="text-white">All</Text>
               </TouchableOpacity>
-              <TouchableOpacity className="bg-white/10 px-4 py-2 rounded-xl">
-                <Text className="text-white">Pending</Text>
+              <TouchableOpacity
+                className={`bg-white/10 px-4 py-2 rounded-xl ${selectedTab === 'pending' ? 'border-2 border-yellow-300' : ''}`}
+                onPress={() => setSelectedTab('pending')}
+              >
+                <Text className="text-yellow-200">Pending</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className={`bg-white/10 px-4 py-2 rounded-xl ${selectedTab === 'ongoing' ? 'border-2 border-blue-300' : ''}`}
+                onPress={() => setSelectedTab('ongoing')}
+              >
+                <Text className="text-blue-200">Ongoing</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className={`bg-white/10 px-4 py-2 rounded-xl ${selectedTab === 'completed' ? 'border-2 border-green-300' : ''}`}
+                onPress={() => setSelectedTab('completed')}
+              >
+                <Text className="text-green-200">Completed</Text>
               </TouchableOpacity>
             </View>
           </View>

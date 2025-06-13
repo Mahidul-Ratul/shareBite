@@ -245,33 +245,27 @@ export default function DonationDetailsScreen() {
     }
   };
 
-  // Get volunteer's unique id from Supabase Auth
+  // Get volunteer's unique id from volunteer table using email
   const getVolunteerId = async () => {
-    // Try to get the current session user reliably
-    let userId = null;
+    // Get the current session user reliably
+    let userEmail = null;
     try {
       const { data, error } = await supabase.auth.getSession();
-      console.log('getSession:', { data, error });
-      if (!error && data?.session?.user?.id) {
-        userId = data.session.user.id;
-        console.log('userId from getSession:', userId);
+      if (!error && data?.session?.user?.email) {
+        userEmail = data.session.user.email;
       }
     } catch (e) {
-      console.log('getSession exception:', e);
+      // fallback
     }
-    if (!userId) {
+    if (!userEmail) {
       try {
         const { data, error } = await supabase.auth.getUser();
-        console.log('getUser:', { data, error });
-        if (!error && data?.user?.id) {
-          userId = data.user.id;
-          console.log('userId from getUser:', userId);
+        if (!error && data?.user?.email) {
+          userEmail = data.user.email;
         }
-      } catch (e) {
-        console.log('getUser exception:', e);
-      }
+      } catch (e) {}
     }
-    if (!userId) {
+    if (!userEmail) {
       Alert.alert(
         'Error',
         'You are not logged in. Please log in again.',
@@ -282,7 +276,17 @@ export default function DonationDetailsScreen() {
       );
       throw new Error('User not logged in');
     }
-    return userId;
+    // Now fetch the volunteer id from the volunteer table using the email
+    const { data: volunteerRow, error: volunteerRowError } = await supabase
+      .from('volunteer')
+      .select('id')
+      .eq('email', userEmail)
+      .maybeSingle();
+    if (volunteerRowError || !volunteerRow) {
+      Alert.alert('Error', 'Volunteer profile not found for this email.');
+      throw new Error('Volunteer not found');
+    }
+    return volunteerRow.id;
   };
 
   const handleAccept = async () => {
@@ -291,15 +295,24 @@ export default function DonationDetailsScreen() {
     try {
       const { data, error } = await supabase
         .from('donation')
-        .select('status,volunteer_id')
+        .select('status,volunteer_id,ngo_id,donor_id,Location')
         .eq('id', donationId)
-        .single();
+        .maybeSingle();
       if (error) throw error;
+      if (!data) {
+        Alert.alert('Error', 'Donation not found.');
+        setLoading(false);
+        return;
+      }
       if (data.status === 'volunteer is assigned' || data.volunteer_id) {
         Alert.alert('Sorry', 'This donation is already assigned to a volunteer.');
         return;
       }
+      // Get volunteer info from volunteer table using email
       const volunteerId = await getVolunteerId();
+      // Calculate distance (optional, fallback to '-')
+      let distance = '-';
+      // Assign volunteer to donation
       const { error: updateError } = await supabase
         .from('donation')
         .update({
@@ -308,6 +321,58 @@ export default function DonationDetailsScreen() {
         })
         .eq('id', donationId);
       if (updateError) throw updateError;
+      // Send notifications to admin, donor, and receiver
+      const notifications = [
+        {
+          title: 'Volunteer Assigned',
+          message: `A volunteer has accepted the donation for delivery.`,
+          type: 'assigned',
+          isread: false,
+          for: 'admin',
+          donation_id: donationId,
+          created_at: new Date().toISOString(),
+          volunteer_id: volunteerId,
+        },
+        {
+          title: 'Volunteer Assigned',
+          message: `A volunteer will collect and deliver your donation.`,
+          type: 'assigned',
+          isread: false,
+          for: 'donor',
+          donation_id: donationId,
+          created_at: new Date().toISOString(),
+          donor_id: data.donor_id,
+          volunteer_id: volunteerId,
+        },
+        {
+          title: 'Volunteer Assigned',
+          message: `A volunteer will deliver the donation to you.`,
+          type: 'assigned',
+          isread: false,
+          for: 'receiver',
+          donation_id: donationId,
+          created_at: new Date().toISOString(),
+          ngo_id: data.ngo_id,
+          volunteer_id: volunteerId,
+        },
+        // Notify donor that a specific volunteer is assigned
+        {
+          title: 'Volunteer Assigned',
+          message: `A volunteer has been assigned and will collect your food donation soon.`,
+          type: 'assigned',
+          isread: false,
+          for: 'donor',
+          donation_id: donationId,
+          created_at: new Date().toISOString(),
+          donor_id: data.donor_id,
+          volunteer_id: volunteerId,
+        },
+      ];
+      const { error: notifError } = await supabase.from('notifications').insert(notifications);
+      if (notifError) {
+        console.error('Notification insert error:', notifError);
+        Alert.alert('Warning', 'Volunteer assigned, but notification failed to send.');
+      }
       Alert.alert('Success', 'You have been assigned to this donation!', [
         { text: 'OK', onPress: () => router.back() }
       ]);
@@ -319,6 +384,95 @@ export default function DonationDetailsScreen() {
       setLoading(false);
     }
   };
+
+  const handleDecline = async () => {
+    if (!donationId) return;
+    setLoading(true);
+    try {
+      // Get volunteer info from volunteer table using email
+      const volunteerId = await getVolunteerId();
+      // Find the notification for this volunteer and this donation (for: 'volunteer')
+      const { data: notifications, error: notifFetchError } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('donation_id', donationId)
+        .eq('volunteer_id', volunteerId)
+        .eq('for', 'volunteer');
+      if (notifFetchError) throw notifFetchError;
+      if (notifications && notifications.length > 0) {
+        const notifIds = notifications.map((n: any) => n.id);
+        // Mark as unavailable/declined only for this volunteer
+        const { data: updatedRows, error: notifUpdateError } = await supabase
+          .from('notifications')
+          .update({ isread: true, status: 'declined' })
+          .in('id', notifIds)
+          .select();
+        if (notifUpdateError) {
+          console.error('Notification update error:', notifUpdateError);
+          throw notifUpdateError;
+        } else {
+          if (updatedRows && updatedRows.some((n: any) => !n.status || n.status === '')) {
+            await supabase
+              .from('notifications')
+              .update({ isread: true, status: 'declined' })
+              .in('id', notifIds);
+            console.log('Patched declined status for notifications:', notifIds);
+          } else {
+            console.log('Declined notification(s) updated:', updatedRows);
+          }
+        }
+      } else {
+        console.warn('No notification found for this volunteer and donation.');
+      }
+      // If no notification found, try to find and update any notification for this volunteer and donation that is not already declined
+      if (!notifications || notifications.length === 0) {
+        const { data: declinedRows, error: declinedFetchError } = await supabase
+          .from('notifications')
+          .select('id, status')
+          .eq('donation_id', donationId)
+          .eq('volunteer_id', volunteerId)
+          .eq('for', 'volunteer');
+        if (declinedFetchError) throw declinedFetchError;
+        if (declinedRows && declinedRows.length > 0) {
+          const toDecline = declinedRows.filter((n: any) => n.status !== 'declined');
+          if (toDecline.length > 0) {
+            const notifIds = toDecline.map((n: any) => n.id);
+            await supabase
+              .from('notifications')
+              .update({ isread: true, status: 'declined' })
+              .in('id', notifIds);
+            console.log('Force-declined notification(s):', notifIds);
+          } else {
+            console.log('All notifications for this volunteer and donation are already declined.');
+          }
+        } else {
+          console.warn('Still no notification found for this volunteer and donation.');
+        }
+      }
+      // Debug: log volunteerId and donationId
+      console.log('Decline pressed for volunteerId:', volunteerId, 'donationId:', donationId);
+      // Debug: log all notifications for this donation
+      const { data: allNotifs } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('donation_id', donationId);
+      console.log('All notifications for this donation:', allNotifs);
+      setLoading(false);
+      Alert.alert('Declined', 'You have declined this donation request.');
+      router.back();
+    } catch (err) {
+      setLoading(false);
+      console.error('Error declining donation:', err);
+      Alert.alert('Error', 'Failed to decline donation');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // NOTE: To ensure notifications are unique per volunteer, make sure that when a donation is created or becomes available,
+  // a notification row is inserted for each eligible volunteer (with for: 'volunteer', volunteer_id, and donation_id).
+  // This should be handled in the backend or wherever donations are made available to volunteers.
+  // NOTE: If status is not updating, ensure a notification row exists for this volunteer and donation with the correct volunteer_id (auth user id) in the database.
 
   if (loading && !details) {
     return (
@@ -500,7 +654,7 @@ export default function DonationDetailsScreen() {
       ) : (
         <View className="bg-white px-6 py-4 border-t border-gray-200">
           <View className="flex-row space-x-4">
-            <TouchableOpacity onPress={() => router.back()} className="flex-1 py-3 border border-gray-300 rounded-xl">
+            <TouchableOpacity onPress={handleDecline} className="flex-1 py-3 border border-gray-300 rounded-xl">
               <Text className="text-gray-700 text-center font-rubik-medium">Decline</Text>
             </TouchableOpacity>
             <TouchableOpacity

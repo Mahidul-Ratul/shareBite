@@ -1,74 +1,63 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons, MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
 import { Link, useRouter } from "expo-router";
+import { supabase } from '../../../../constants/supabaseConfig';
 
 interface Notification {
   id: string;
-  type: 'accepted' | 'pickup' | 'completed' | 'cancelled' | 'assigned';
+  type: string;
   title: string;
   message: string;
-  timestamp: string;
-  isRead: boolean;
-  donationId: string;
-  details: {
-    organizationName?: string;
-    organizationImage?: any;
-    volunteerName?: string;
-    volunteerImage?: any;
-    items?: Array<{ name: string; quantity: string }>;
-  };
+  created_at: string;
+  isread: boolean;
+  donation_id: string;
+  status?: string;
 }
 
 export default function NotificationList() {
   const router = useRouter();
-  const [notifications] = useState<Notification[]>([
-    {
-      id: '1',
-      type: 'accepted',
-      title: 'Donation Request Accepted',
-      message: 'Food Bank Bangladesh has accepted your donation request',
-      timestamp: '2024-04-27T10:30:00Z',
-      isRead: false,
-      donationId: 'DON001',
-      details: {
-        organizationName: 'Food Bank Bangladesh',
-        organizationImage: require('@/assets/images/ngo.jpg'),
-        items: [
-          { name: 'Rice', quantity: '10 kg' },
-          { name: 'Dal', quantity: '5 kg' }
-        ]
-      }
-    },
-    {
-      id: '2',
-      type: 'assigned',
-      title: 'Volunteer Assigned',
-      message: 'Abdul Karim has been assigned to collect your donation',
-      timestamp: '2024-04-27T10:35:00Z',
-      isRead: false,
-      donationId: 'DON001',
-      details: {
-        volunteerName: 'Abdul Karim',
-        volunteerImage: require('@/assets/images/hasi.jpg'),
-      }
-    },
-    {
-      id: '3',
-      type: 'completed',
-      title: 'Donation Completed',
-      message: 'Your donation has been successfully delivered',
-      timestamp: '2024-04-27T11:45:00Z',
-      isRead: true,
-      donationId: 'DON001',
-      details: {
-        organizationName: 'Food Bank Bangladesh',
-        organizationImage: require('@/assets/images/ngo.jpg'),
-      }
-    }
-  ]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [donorId, setDonorId] = useState<string | null>(null);
 
-  const getNotificationStyle = (type: Notification['type']) => {
+  useEffect(() => {
+    const fetchDonorIdAndNotifications = async () => {
+      setLoading(true);
+      // Get logged in user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+      // Get donor id from donor table by matching email
+      const { data: donorData } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', user.email)
+        .single();
+      if (!donorData) {
+        setLoading(false);
+        return;
+      }
+      setDonorId(donorData.id);
+      // Fetch notifications for this donor
+      console.log(donorData.id)
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('for', 'donor')
+        .eq('donor_id', donorData.id)
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        setNotifications(data);
+      }
+      setLoading(false);
+    };
+    fetchDonorIdAndNotifications();
+  }, []);
+
+  const getNotificationStyle = (type: string) => {
     switch (type) {
       case 'accepted':
         return { bg: 'bg-blue-100', icon: 'check-circle', color: '#2563eb' };
@@ -80,6 +69,8 @@ export default function NotificationList() {
         return { bg: 'bg-green-100', icon: 'check-double', color: '#16a34a' };
       case 'cancelled':
         return { bg: 'bg-red-100', icon: 'times-circle', color: '#dc2626' };
+      default:
+        return { bg: 'bg-gray-100', icon: 'bell', color: '#6B7280' };
     }
   };
 
@@ -89,44 +80,66 @@ export default function NotificationList() {
         <Text className="text-2xl font-rubik-bold text-gray-800">Notifications</Text>
       </View>
 
-      <ScrollView className="flex-1">
-        <View className="p-4 space-y-3">
-          {notifications.map((notification) => (
-            <TouchableOpacity
-              key={notification.id}
-              className={`p-4 rounded-xl border border-gray-100 ${
-                notification.isRead ? 'bg-white' : 'bg-green-50'
-              }`}
-              onPress={() => router.push('./not_dt')}
-            >
-              <View className="flex-row">
-                <View className={`${getNotificationStyle(notification.type)?.bg} p-3 rounded-full`}>
-                  <FontAwesome5 
-                    name={getNotificationStyle(notification.type)?.icon!} 
-                    size={20} 
-                    color={getNotificationStyle(notification.type)?.color}
-                    solid 
-                  />
-                </View>
-                <View className="flex-1 ml-3">
-                  <Text className="font-rubik-bold text-gray-800">
-                    {notification.title}
-                  </Text>
-                  <Text className="text-gray-600 text-sm mt-1">
-                    {notification.message}
-                  </Text>
-                  <Text className="text-gray-400 text-xs mt-2">
-                    {new Date(notification.timestamp).toLocaleString()}
-                  </Text>
-                </View>
-                {!notification.isRead && (
-                  <View className="w-2 h-2 rounded-full bg-green-500" />
-                )}
-              </View>
-            </TouchableOpacity>
-          ))}
+      {loading ? (
+        <View className="flex-1 justify-center items-center">
+          <ActivityIndicator size="large" color="#6366f1" />
         </View>
-      </ScrollView>
+      ) : (
+        <ScrollView className="flex-1">
+          <View className="p-4 space-y-3">
+            {notifications.length === 0 && (
+              <Text className="text-gray-400 text-center mt-8">No notifications found.</Text>
+            )}
+            {notifications.map((notification) => (
+              <TouchableOpacity
+                key={notification.id}
+                className={`p-4 rounded-xl border border-gray-100 ${
+                  notification.isread ? 'bg-white' : 'bg-green-50'
+                }`}
+                onPress={async () => {
+                  // Mark notification as read in the backend
+                  if (!notification.isread) {
+                    await supabase
+                      .from('notifications')
+                      .update({ isread: true })
+                      .eq('id', notification.id);
+                    setNotifications((prev) => prev.map((n) => n.id === notification.id ? { ...n, isread: true } : n));
+                  }
+                  router.push({
+                    pathname: './not_dt',
+                    params: { donation_id: notification.donation_id }
+                  });
+                }}
+              >
+                <View className="flex-row">
+                  <View className={`${getNotificationStyle(notification.type)?.bg} p-3 rounded-full`}>
+                    <FontAwesome5
+                      name={getNotificationStyle(notification.type)?.icon!}
+                      size={20}
+                      color={getNotificationStyle(notification.type)?.color}
+                      solid
+                    />
+                  </View>
+                  <View className="flex-1 ml-3">
+                    <Text className="font-rubik-bold text-gray-800">
+                      {notification.title}
+                    </Text>
+                    <Text className="text-gray-600 text-sm mt-1">
+                      {notification.message}
+                    </Text>
+                    <Text className="text-gray-400 text-xs mt-2">
+                      {new Date(notification.created_at).toLocaleString()}
+                    </Text>
+                  </View>
+                  {!notification.isread && (
+                    <View className="w-2 h-2 rounded-full bg-green-500" />
+                  )}
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+      )}
 
       {/* Bottom Navigation */}
       <View className="flex-row justify-between items-center bg-white py-3 px-6 border-t border-gray-200">

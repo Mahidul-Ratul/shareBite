@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Image, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import MapView, { Marker } from 'react-native-maps';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -27,6 +27,14 @@ const DonateForm = () => {
   const [nearbyNGOs, setNearbyNGOs] = useState<any[]>([]); // Store nearby NGOs
   const [selectedNGO, setSelectedNGO] = useState(''); // Store selected NGO
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const {
+    ngo_id,
+    donor_lat,
+    donor_lng,
+    donor_location,
+    ngo_location
+  } = params;
 
   // Request permission to access gallery
   const requestPermission = async () => {
@@ -227,6 +235,30 @@ const DonateForm = () => {
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     }
   };
+
+  useEffect(() => {
+    // Only set if not already set
+    if (ngo_id && donor_lat && donor_lng && donor_location && (!location || !selectedNGO)) {
+      setSelectedNGO(ngo_id as string);
+      setLocation({ latitude: Number(donor_lat), longitude: Number(donor_lng) });
+      setLocationText(donor_location as string);
+    } else if (ngo_id && ngo_location && !selectedNGO) {
+      setSelectedNGO(ngo_id as string);
+      try {
+        const parsed = typeof ngo_location === 'string' ? JSON.parse(ngo_location as string) : ngo_location;
+        if (parsed && parsed.latitude && parsed.longitude) {
+          setLocation({ latitude: parsed.latitude, longitude: parsed.longitude });
+          setLocationText('');
+        } else {
+          setLocationText(ngo_location as string);
+        }
+      } catch {
+        setLocationText(ngo_location as string);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ngo_id, donor_lat, donor_lng, donor_location, ngo_location]);
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ paddingBottom: 20 }} className="bg-white">

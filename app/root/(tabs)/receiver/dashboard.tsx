@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity, Image, ImageBackground } from "react-native";
 import { Link, useRouter } from "expo-router";
@@ -46,6 +45,9 @@ export default function NGOHomePage() {
   
   const [receiverData, setReceiverData] = useState<ReceiverData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [news, setNews] = useState<any[]>([]);
+  const [newsLoading, setNewsLoading] = useState(true);
+
   const fetchReceiverData = async () => {
     try {
       // Get the logged-in user's email
@@ -89,8 +91,24 @@ export default function NGOHomePage() {
       setLoading(false);
     }
   };
+
   useEffect(() => {
     fetchReceiverData();
+  }, []);
+
+  useEffect(() => {
+    // Fetch news/events
+    const fetchNews = async () => {
+      setNewsLoading(true);
+      const { data, error } = await supabase
+        .from('news')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(3);
+      if (!error && data) setNews(data);
+      setNewsLoading(false);
+    };
+    fetchNews();
   }, []);
 
   const donor = [
@@ -239,113 +257,58 @@ export default function NGOHomePage() {
               <View className="p-5 rounded-lg mb-5">
                 <View className="flex-row justify-between items-center mb-4">
                   <Text className="text-2xl font-rubik-bold text-gray-800">Recent Events & Stories</Text>
-                  <TouchableOpacity>
+                  <TouchableOpacity onPress={() => router.push("../All_News")}>
                     <Text className="text-green-600 font-rubik-medium">View All</Text>
                   </TouchableOpacity>
                 </View>
-                
-                <ScrollView 
-                  horizontal 
-                  showsHorizontalScrollIndicator={false} 
-                  className="mb-3"
-                >
-                  {/* First Card */}
-                  <View className="bg-white p-4 rounded-2xl shadow-md mr-4 w-72 border border-gray-100">
-                    <View className="absolute top-5 right-5 bg-black/50 px-3 py-1 rounded-full z-10">
-                      <Text className="text-white font-rubik-medium text-xs">24 April 2025</Text>
-                    </View>
-                    <Image 
-                      source={require("@/assets/images/istockphoto-1478316232-612x612.jpg")} 
-                      className="w-full h-48 rounded-xl mb-3" 
-                      resizeMode="cover"
-                    />
-                    <View className="flex-row justify-between items-center mb-2">
-                      <View className="bg-green-50 px-3 py-1 rounded-full">
-                        <Text className="text-green-600 font-rubik-medium text-sm">Latest Update</Text>
+                {newsLoading ? (
+                    <Text className="text-gray-400 text-center">Loading...</Text>
+                  ) : (
+                  <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false} 
+                    className="mb-3"
+                  >
+                    {news.map((item, idx) => (
+                      <View key={item.id || idx} className="bg-white p-4 rounded-2xl shadow-md mr-4 w-72 border border-gray-100">
+                        <View className="absolute top-5 right-5 bg-black/50 px-3 py-1 rounded-full z-10">
+                          <Text className="text-white font-rubik-medium text-xs">{item.created_at ? new Date(item.created_at).toLocaleDateString() : ''}</Text>
+                        </View>
+                        <Image
+                          source={{ uri: item.picture.startsWith('data:') ? item.picture : `data:image/jpeg;base64,${item.picture}` }}
+                          className="w-full h-48 rounded-xl mb-3"
+                          resizeMode="cover"
+                        />
+                        <View className="flex-row justify-between items-center mb-2">
+                          <View className={`px-3 py-1 rounded-full ${item.tag === 'Featured' ? 'bg-blue-50' : item.tag === 'Holiday Special' ? 'bg-orange-50' : 'bg-green-50'}`}>
+                            <Text className={`font-rubik-medium text-sm ${item.tag === 'Featured' ? 'text-blue-600' : item.tag === 'Holiday Special' ? 'text-orange-600' : 'text-green-600'}`}>{item.tag || 'Latest Update'}</Text>
+                          </View>
+                          <View className="flex-row items-center">
+                            <MaterialIcons name="restaurant" size={16} color="#16a34a" />
+                            <Text className="text-green-600 font-rubik text-sm ml-1">{item.title}</Text>
+                          </View>
+                        </View>
+                        <Text className="text-lg font-rubik-medium text-gray-800 mb-2">
+                          {item.title}
+                        </Text>
+                        <Text className="text-gray-600 font-rubik text-sm mb-3">
+                          {item.news}
+                        </Text>
+                        <View className="flex-row justify-between items-center">
+                          <View className="flex-row items-center">
+                            <MaterialIcons name="schedule" size={16} color="#6B7280" />
+                            <Text className="text-gray-500 font-rubik text-sm ml-1">{item.created_at ? new Date(item.created_at).toLocaleDateString() : ''}</Text>
+                          </View>
+                          <View className="flex-row items-center">
+                            <MaterialIcons name="location-on" size={16} color="#6B7280" />
+                            <Text className="text-gray-500 font-rubik text-sm ml-1">{item.Location || 'N/A'}</Text>
+                          </View>
+                        </View>
                       </View>
-                      <View className="flex-row items-center">
-                        <MaterialIcons name="restaurant" size={16} color="#16a34a" />
-                        <Text className="text-green-600 font-rubik text-sm ml-1">500+ meals</Text>
-                      </View>
-                    </View>
-                    <Text className="text-lg font-rubik-medium text-gray-800 mb-2">
-                      Helping Hands: 500+ meals distributed
-                    </Text>
-                    <Text className="text-gray-600 font-rubik text-sm mb-3">
-                      Local shelters received fresh, nutritious meals through our community initiative.</Text>
-                    <View className="flex-row justify-between items-center">
-                      <View className="flex-row items-center">
-                        <MaterialIcons name="schedule" size={16} color="#6B7280" />
-                        <Text className="text-gray-500 font-rubik text-sm ml-1">2 days ago</Text>
-                      </View>
-                      <View className="flex-row items-center">
-                        <MaterialIcons name="location-on" size={16} color="#6B7280" />
-                        <Text className="text-gray-500 font-rubik text-sm ml-1">Springfield</Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Second Card */}
-                  <View className="bg-white p-4 rounded-2xl shadow-md mr-4 w-72 border border-gray-100">
-                    <View className="absolute top-5 right-5 bg-black/50 px-3 py-1 rounded-full z-10">
-                      <Text className="text-white font-rubik-medium text-xs">21 April 2025</Text>
-                    </View>
-                    <Image 
-                      source={require("@/assets/images/hasi.jpg")} 
-                      className="w-full h-48 rounded-xl mb-3" 
-                      resizeMode="cover"
-                    />
-                    <View className="bg-blue-50 px-3 py-1 rounded-full self-start mb-2">
-                      <Text className="text-blue-600 font-rubik-medium text-sm">Featured</Text>
-                    </View>
-                    <Text className="text-lg font-rubik-medium text-gray-800 mb-2">
-                      A child's smile: Warm meals provided
-                    </Text>
-                    <Text className="text-gray-600 font-rubik text-sm mb-3">
-                      Making a difference in children's lives through our meal program.
-                    </Text>
-                    <View className="flex-row justify-between items-center">
-                      <View className="flex-row items-center">
-                        <MaterialIcons name="schedule" size={16} color="#6B7280" />
-                        <Text className="text-gray-500 font-rubik text-sm ml-1">2 days ago</Text>
-                      </View>
-                      <View className="flex-row items-center">
-                        <MaterialIcons name="location-on" size={16} color="#6B7280" />
-                        <Text className="text-gray-500 font-rubik text-sm ml-1">Springfield</Text>
-                      </View>
-                    </View>
-                  </View>{/* Third Card */}
-                  <View className="bg-white p-4 rounded-2xl shadow-md mr-4 w-72 border border-gray-100">
-                    <View className="absolute top-5 right-5 bg-black/50 px-3 py-1 rounded-full z-10">
-                      <Text className="text-white font-rubik-medium text-xs">19 April 2025</Text>
-                    </View>
-                    <Image 
-                      source={require("@/assets/images/food.jpg")} 
-                      className="w-full h-48 rounded-xl mb-3" 
-                      resizeMode="cover"
-                    />
-                    <View className="bg-orange-50 px-3 py-1 rounded-full self-start mb-2">
-                      <Text className="text-orange-600 font-rubik-medium text-sm">Holiday Special</Text>
-                    </View>
-                    <Text className="text-lg font-rubik-medium text-gray-800 mb-2">
-                      Community effort: Holiday meals
-                    </Text>
-                    <Text className="text-gray-600 font-rubik text-sm mb-3">
-                      Supporting families during the holiday season with nutritious meals.
-                    </Text>
-                    <View className="flex-row justify-between items-center">
-                      <View className="flex-row items-center">
-                        <MaterialIcons name="schedule" size={16} color="#6B7280" />
-                        <Text className="text-gray-500 font-rubik text-sm ml-1">2 days ago</Text>
-                      </View>
-                      <View className="flex-row items-center">
-                        <MaterialIcons name="location-on" size={16} color="#6B7280" />
-                        <Text className="text-gray-500 font-rubik text-sm ml-1">Springfield</Text>
-                      </View>
-                    </View>
-                  </View>
-                </ScrollView>
-              </View>
+                    ))}
+                  </ScrollView>
+                  )}
+                </View>
 
         
       </ScrollView>
@@ -357,6 +320,12 @@ export default function NGOHomePage() {
         <Text className="text-orange-500 text-xs mt-1 font-rubik-medium">Home</Text>
       </TouchableOpacity>
     </Link>
+    <Link href="./profile" asChild>
+    <TouchableOpacity className="items-center flex-1">
+      <FontAwesome name="user" size={24} color="#F97316" />
+      <Text className="text-orange-500 text-xs mt-1 font-rubik-medium">Profile</Text>
+    </TouchableOpacity>
+  </Link>
 
   <Link href="./request" asChild>
     <TouchableOpacity className="items-center flex-1">
