@@ -4,6 +4,7 @@ import { Link, useRouter } from "expo-router";
 import { FontAwesome, MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../../../constants/supabaseConfig";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import BottomNavigation from "./BottomNavigation";
 
 import axios from "axios";
 
@@ -47,6 +48,7 @@ export default function NGOHomePage() {
   const [loading, setLoading] = useState(true);
   const [news, setNews] = useState<any[]>([]);
   const [newsLoading, setNewsLoading] = useState(true);
+  const [notificationCount, setNotificationCount] = useState(0);
 
   const fetchReceiverData = async () => {
     try {
@@ -97,6 +99,30 @@ export default function NGOHomePage() {
   }, []);
 
   useEffect(() => {
+    // Fetch notification count
+    const fetchNotificationCount = async () => {
+      try {
+        const userEmail = await AsyncStorage.getItem("userEmail");
+        if (userEmail) {
+          const { count, error } = await supabase
+            .from('notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('receiver_email', userEmail)
+            .eq('read', false);
+          
+          if (!error && count !== null) {
+            setNotificationCount(count);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching notification count:', error);
+      }
+    };
+    
+    fetchNotificationCount();
+  }, []);
+
+  useEffect(() => {
     // Fetch news/events
     const fetchNews = async () => {
       setNewsLoading(true);
@@ -127,7 +153,7 @@ export default function NGOHomePage() {
 
   return (
     <View className="flex-1 bg-white">
-      <ScrollView className="px-3 py-">
+      <ScrollView className="px-3 py-3">
         {/* NGO Header */}
         <View className="flex-row justify-between items-center py-3">
             {/* Logo and App Name */}
@@ -154,9 +180,11 @@ export default function NGOHomePage() {
                         color="#374151" 
                     />
                     {/* Notification Badge */}
-                    <View className="absolute -top-0.5 -right-0.5 bg-red-500 w-5 h-5 rounded-full items-center justify-center">
-                        <Text className="text-white text-xs font-bold">3</Text>
-                    </View>
+                    {notificationCount > 0 && (
+                        <View className="absolute -top-0.5 -right-0.5 bg-red-500 w-5 h-5 rounded-full items-center justify-center">
+                            <Text className="text-white text-xs font-bold">{notificationCount}</Text>
+                        </View>
+                    )}
                 </TouchableOpacity></View>
         </View>
               
@@ -170,10 +198,6 @@ export default function NGOHomePage() {
             />  
         <View className='text-center mt-5'>
           <Text className='text-2xl text-center uppercase font-rubik-bold text-black-200 mt-1'>Welcome, {receiverData?.name || "NGO"}</Text>
-          <View className="flex-row items-center justify-center mb-2">
-          <MaterialIcons name="location-on" size={20} color="#FF5722" />
-          <Text className="font-rubik-medium text-lg text-gray-800 mt-1 ml-1"> {receiverData?.location || "Location not available"}</Text>
-          </View>
         </View>
         <View className="bg-white mb-6 mx-1 overflow-hidden">
           {/* Header with gradient overlay */}
@@ -182,7 +206,7 @@ export default function NGOHomePage() {
             <View className="flex-1 px-6 py-4">
               <View className="items-center">
                 <Text className="text-2xl font-rubik-bold text-gray-800 text-center">
-                  {donor[0]?.ngoName}
+                  {receiverData?.name || "NGO"}
                 </Text>
                 <Text className="text-gray-600 font-rubik mt-2 leading-6 text-center">
                   {donor[0]?.description}
@@ -206,33 +230,35 @@ export default function NGOHomePage() {
                   Meals Served
                 </Text>
               </View>
+              
               {/* Communities */}
               <View className="flex-1 items-center px-4 py-3 bg-blue-50 rounded-2xl mx-2">
-                        <View className="bg-blue-100 p-2 rounded-full mb-2">
-                          <MaterialIcons name="people" size={24} color="#2563eb" />
-                        </View>
-                        <Text className="text-xl font-rubik-bold text-blue-600">
-                          {donor[0]?.impactStats.communitiesReached}
-                        </Text>
-                        <Text className="text-xs text-gray-600 font-rubik text-center">
-                          Communities
-                        </Text>
-                      </View>{/* Volunteers */}
-                      <View className="flex-1 items-center px-4 py-3 bg-orange-50 rounded-2xl mx-2">
-                        <View className="bg-orange-100 p-2 rounded-full mb-2">
-                          <MaterialIcons name="volunteer-activism" size={24} color="#ea580c" />
-                        </View>
-                        <Text className="text-xl font-rubik-bold text-orange-600">
-                          {donor[0]?.impactStats.volunteersActive}
-                        </Text>
-                        <Text className="text-xs text-gray-600 font-rubik text-center">
-                          Volunteers
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                 
+                <View className="bg-blue-100 p-2 rounded-full mb-2">
+                  <MaterialIcons name="people" size={24} color="#2563eb" />
                 </View>
+                <Text className="text-xl font-rubik-bold text-blue-600">
+                  {donor[0]?.impactStats.communitiesReached}
+                </Text>
+                <Text className="text-xs text-gray-600 font-rubik text-center">
+                  Communities
+                </Text>
+              </View>
+              
+              {/* Volunteers */}
+              <View className="flex-1 items-center px-4 py-3 bg-orange-50 rounded-2xl mx-2">
+                <View className="bg-orange-100 p-2 rounded-full mb-2">
+                  <MaterialIcons name="volunteer-activism" size={24} color="#ea580c" />
+                </View>
+                <Text className="text-xl font-rubik-bold text-orange-600">
+                  {donor[0]?.impactStats.volunteersActive}
+                </Text>
+                <Text className="text-xs text-gray-600 font-rubik text-center">
+                  Volunteers
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
               
                   <ImageBackground 
                     // Use require() for local assets
@@ -241,7 +267,7 @@ export default function NGOHomePage() {
                     className="rounded-lg mb-5 overflow-hidden"
                   >
                     <View className="p-5 bg-black/30"> {/* Semi-transparent overlay */}
-                      <Text className="font-rubik-bold text-lg text-white">Welcome {donor[0]?.ngoName}</Text>
+                      <Text className="font-rubik-bold text-lg text-white">Welcome {receiverData?.name || "NGO"}</Text>
                       <Text className="text-white font-rubik mb-3">
                         To help the community by requesting unused food?
                       </Text>
@@ -313,43 +339,7 @@ export default function NGOHomePage() {
         
       </ScrollView>
       {/* Bottom Navigation */}
-  <View className="flex-row justify-between items-center bg-white py-3 px-6 border-t border-gray-200">
-    <Link href="./dashboard" asChild>
-      <TouchableOpacity className="items-center flex-1">
-        <FontAwesome name="home" size={24} color="#F97316" />
-        <Text className="text-orange-500 text-xs mt-1 font-rubik-medium">Home</Text>
-      </TouchableOpacity>
-    </Link>
-    <Link href="./profile" asChild>
-    <TouchableOpacity className="items-center flex-1">
-      <FontAwesome name="user" size={24} color="#F97316" />
-      <Text className="text-orange-500 text-xs mt-1 font-rubik-medium">Profile</Text>
-    </TouchableOpacity>
-  </Link>
-
-  <Link href="./request" asChild>
-    <TouchableOpacity className="items-center flex-1">
-      <View className="bg-orange-500 p-3 rounded-full -mt-8 border-4 border-white shadow-lg">
-        <FontAwesome name="plus" size={24} color="white" />
-      </View>
-      <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Request</Text>
-    </TouchableOpacity>
-  </Link>
-
-  <Link href="./past_donat" asChild>
-    <TouchableOpacity className="items-center flex-1">
-      <FontAwesome name="history" size={24} color="#6B7280" />
-      <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">History</Text>
-    </TouchableOpacity>
-  </Link>
-
-  <Link href="./settings" asChild>
-    <TouchableOpacity className="items-center flex-1">
-      <Ionicons name="settings-outline" size={24} color="#6B7280" />
-      <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Settings</Text>
-    </TouchableOpacity>
-  </Link>
-</View>
+      <BottomNavigation currentPage="dashboard" />
     </View>
   );
 }

@@ -576,57 +576,54 @@ const DonationDetail = () => {
 
           {/* Assignment Section - only show if approvedF */}
           {donation.status === 'approvedF' && (
-            <View className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6 mt-6">
+            <View className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 mt-6">
               <View className="flex-row items-center">
-                <MaterialIcons name="check-circle" size={24} color="#16a34a" />
-                <Text className="text-green-800 font-bold ml-2">Donation Approved</Text>
+                <MaterialIcons name="hourglass-empty" size={24} color="#3b82f6" />
+                <Text className="text-blue-800 font-bold ml-2">Waiting for Volunteer Assignment</Text>
               </View>
-              <Text className="text-green-700 mt-2">
-                Please assign this donation to be collected
+              <Text className="text-blue-700 mt-2">
+                The receiver has accepted this donation. Nearby volunteers have been notified and the system is waiting for a volunteer to accept the delivery.
               </Text>
-              {/* Assignment Options */}
+              {/* Timeline */}
               <View className="mt-6">
-                <Text className="text-lg font-bold text-gray-900 mb-3">Collection Assignment</Text>
-                {/* Option 1: Assign to Volunteer */}
-                <TouchableOpacity
-                  className="bg-blue-50 rounded-xl p-4 mb-4 border border-blue-100"
-                  onPress={() => {
-                    setSelectedOption('volunteer');
-                    setModalVisible(true);
-                  }}
-                >
-                  <View className="flex-row items-center">
-                    <MaterialIcons name="person" size={24} color="#3b82f6" />
-                    <View className="ml-3 flex-1">
-                      <Text className="text-gray-900 font-medium">Assign to Volunteer</Text>
-                      <Text className="text-gray-600 text-sm mt-1">
-                        {volunteers.length > 0
-                          ? `${volunteers.length} available volunteers`
-                          : 'No volunteers available'}
-                      </Text>
+                <Text className="text-lg font-bold text-gray-900 mb-3">Donation Timeline</Text>
+                {[
+                  { key: 'pending', label: 'Donation Requested' },
+                  { key: 'approved', label: 'Donation Approved' },
+                  { key: 'approvedF', label: 'Waiting for Volunteer Assignment' },
+                  { key: 'volunteer is assigned', label: 'Volunteer Assigned' },
+                  { key: 'on the way to receive food', label: 'Volunteer On The Way' },
+                  { key: 'food collected', label: 'Food Collected' },
+                  { key: 'on the way to deliver food', label: 'On The Way To Receiver' },
+                  { key: 'delivered the food', label: 'Donation Delivered' },
+                ].map((stage, idx, arr) => {
+                  const statusOrder = [
+                    'pending',
+                    'approved',
+                    'approvedF',
+                    'volunteer is assigned',
+                    'on the way to receive food',
+                    'food collected',
+                    'on the way to deliver food',
+                    'delivered the food',
+                  ];
+                  const currentIdx = statusOrder.indexOf(donation.status);
+                  const isCompleted = idx < currentIdx;
+                  const isCurrent = idx === currentIdx;
+                  return (
+                    <View key={stage.key} className="flex-row mb-4 last:mb-0 items-center">
+                      <View className="items-center mr-4">
+                        <View className={`w-4 h-4 rounded-full ${isCompleted ? 'bg-green-500' : isCurrent ? 'bg-blue-500' : 'bg-gray-300'} border-2 border-white shadow`} />
+                        {idx !== arr.length - 1 && (
+                          <View className={`w-0.5 h-8 ${isCompleted ? 'bg-green-200' : isCurrent ? 'bg-blue-200' : 'bg-gray-200'} my-1`} />
+                        )}
+                      </View>
+                      <View className="flex-1">
+                        <Text className={`font-medium text-base ${isCompleted ? 'text-green-700' : isCurrent ? 'text-blue-700' : 'text-gray-400'}`}>{stage.label}</Text>
+                      </View>
                     </View>
-                    <MaterialIcons name="chevron-right" size={24} color="#9ca3af" />
-                  </View>
-                </TouchableOpacity>
-                {/* Option 2: Receiver Collects */}
-                <TouchableOpacity
-                  className="bg-purple-50 rounded-xl p-4 border border-purple-100"
-                  onPress={() => {
-                    setSelectedOption('receiver');
-                    setModalVisible(true);
-                  }}
-                >
-                  <View className="flex-row items-center">
-                    <MaterialIcons name="business" size={24} color="#7e22ce" />
-                    <View className="ml-3 flex-1">
-                      <Text className="text-gray-900 font-medium">NGO Collects Itself</Text>
-                      <Text className="text-gray-600 text-sm mt-1">
-                        Assign to your organization to collect
-                      </Text>
-                    </View>
-                    <MaterialIcons name="chevron-right" size={24} color="#9ca3af" />
-                  </View>
-                </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           )}
@@ -739,98 +736,6 @@ const DonationDetail = () => {
           )}
         </View>
       </ScrollView>
-
-      {/* Assignment Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View className="flex-1 justify-end bg-black/50">
-          <View className="bg-white rounded-t-3xl p-6">
-            <Text className="text-xl font-bold text-gray-900 mb-4">
-              {selectedOption === 'volunteer' ? 'Assign to Volunteer' : 'NGO Collection'}
-            </Text>
-
-            {selectedOption === 'volunteer' && (
-              <>
-                {volunteers.length > 0 ? (
-                  <View>
-                    <Text className="text-gray-600 mb-4">
-                      Select one or more volunteers to notify:
-                    </Text>
-                    {/* List of volunteers with checkboxes */}
-                    {volunteers.map((volunteer) => {
-                      const isSelected = selectedVolunteers.some((v) => v.id === volunteer.id);
-                      return (
-                        <TouchableOpacity
-                          key={volunteer.id}
-                          className={`py-3 border-b border-gray-100 flex-row items-center ${isSelected ? 'bg-blue-100' : ''}`}
-                          onPress={() => {
-                            if (isSelected) {
-                              setSelectedVolunteers(selectedVolunteers.filter((v) => v.id !== volunteer.id));
-                            } else {
-                              setSelectedVolunteers([...selectedVolunteers, volunteer]);
-                            }
-                          }}
-                        >
-                          <MaterialIcons
-                            name={isSelected ? 'check-box' : 'check-box-outline-blank'}
-                            size={22}
-                            color={isSelected ? '#3b82f6' : '#9ca3af'}
-                          />
-                          <View className="ml-2 flex-1">
-                            <Text className="text-gray-900 font-medium">{volunteer.name}</Text>
-                            <Text className="text-gray-600 text-sm">{volunteer.contact}</Text>
-                            <Text className="text-gray-400 text-xs">{volunteer.address}</Text>
-                            <Text className="text-gray-400 text-xs">{volunteer.distance?.toFixed(1)} km away</Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                ) : (
-                  <View className="py-4">
-                    <Text className="text-gray-600 mb-4">
-                      No volunteers available. Please try again later or assign to your NGO.
-                    </Text>
-                  </View>
-                )}
-              </>
-            )}
-
-            {selectedOption === 'receiver' && (
-              <View>
-                <Text className="text-gray-600 mb-4">
-                  This donation will be marked for your organization to collect.
-                </Text>
-                <Text className="text-gray-600">
-                  Please ensure someone from your team collects it within the specified time.
-                </Text>
-              </View>
-            )}
-
-            <View className="flex-row justify-between mt-6">
-              <Pressable
-                className="px-6 py-3"
-                onPress={() => setModalVisible(false)}
-              >
-                <Text className="text-gray-600 font-medium">Cancel</Text>
-              </Pressable>
-              <Pressable
-                className={`bg-blue-500 px-6 py-3 rounded-lg ${selectedOption === 'volunteer' && selectedVolunteers.length === 0 ? 'opacity-50' : ''}`}
-                onPress={selectedOption === 'volunteer' ? handleNotifyVolunteers : handleAssign}
-                disabled={selectedOption === 'volunteer' && selectedVolunteers.length === 0}
-              >
-                <Text className="text-white font-medium">
-                  {selectedOption === 'volunteer' ? 'Notify Volunteers' : 'Confirm Collection'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 };

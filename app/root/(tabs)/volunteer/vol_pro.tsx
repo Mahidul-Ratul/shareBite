@@ -28,6 +28,13 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
+  // Example stats (replace with real data if available)
+  const stats = [
+    { label: 'Deliveries', value: '24', icon: 'local-shipping', color: '#f97316' },
+    { label: 'Events', value: '8', icon: 'event', color: '#2563EB' },
+    { label: 'Points', value: '1200', icon: 'stars', color: '#9333EA' },
+  ];
+
   useEffect(() => {
     fetchVolunteerProfile();
   }, []);
@@ -63,12 +70,8 @@ export default function ProfileScreen() {
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      
-      // Clear local storage
       await AsyncStorage.multiRemove(['userEmail', 'userRole']);
-      
-      // Navigate to login screen
-      router.replace('/root/(tabs)/login');
+      router.replace('../login');
     } catch (error) {
       Alert.alert('Error', 'Failed to logout');
     }
@@ -88,30 +91,23 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView className="flex-1 bg-gray-50">
-      {/* Enhanced Profile Header */}
+      {/* Modern Profile Header */}
       <LinearGradient
-        colors={['#15803d', '#16a34a']}
+        colors={['#f97316', '#ea580c']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        className="pt-12 px-6 pb-24 rounded-b-[40px]"
+        className="pt-14 px-6 pb-10 rounded-b-[40px] relative"
       >
-        <View className="flex-row justify-between mb-4">
-          <TouchableOpacity 
-                        onPress={() => router.push('./edit_pro')}
-                        className="p-2 rounded-full bg-white/10"
-                      >
-                        <FontAwesome5 name="user-edit" size={24} color="#FFF" />
-                      </TouchableOpacity>
-          
-          <TouchableOpacity 
-            onPress={handleLogout}
-            className="bg-white/30 p-3 rounded-full shadow-sm"
-          >
-            <MaterialIcons name="logout" size={24} color="white" />
+        {/* Action Buttons */}
+        <View className="flex-row justify-between mb-2">
+          <TouchableOpacity onPress={handleEditProfile} className="p-2 rounded-full bg-white/20">
+            <FontAwesome5 name="user-edit" size={22} color="#FFF" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleLogout} className="p-2 rounded-full bg-white/20">
+            <MaterialIcons name="logout" size={22} color="#FFF" />
           </TouchableOpacity>
         </View>
-
-        <View className="items-center">
+        <View className="items-center mt-2">
           <View className="border-4 border-white rounded-full p-1 shadow-lg">
             {profile?.image_url ? (
               <Image
@@ -124,55 +120,66 @@ export default function ProfileScreen() {
               </View>
             )}
           </View>
-          <View className="bg-white/30 px-6 py-2 rounded-full mt-4">
-            <Text className="text-white font-rubik text-base">Active Volunteer</Text>
+          <View className="flex-row items-center mt-4">
+            <Text className="text-3xl font-rubik-bold text-white mr-2">
+              {profile?.name || 'Volunteer'}
+            </Text>
+            <View className="bg-white/30 px-4 py-1 rounded-full">
+              <Text className="text-white font-rubik text-base">{profile?.status || 'Active Volunteer'}</Text>
+            </View>
           </View>
-          <Text className="text-3xl font-rubik-bold text-white mt-4">
-            {profile?.name || 'Volunteer'}
-          </Text>
           <Text className="text-white/90 font-rubik mt-1">{profile?.email}</Text>
+          <Text className="text-white/80 font-rubik mt-2 italic text-base">“Thank you for making a difference!”</Text>
+        </View>
+        {/* Stats Section */}
+        <View className="flex-row justify-between mt-8">
+          {stats.map((stat, idx) => (
+            <View key={idx} className="flex-1 bg-white/20 rounded-2xl mx-1 p-4 items-center shadow-md">
+              <MaterialIcons name={stat.icon as any} size={28} color={stat.color} />
+              <Text className="text-white text-xl font-rubik-bold mt-2">{stat.value}</Text>
+              <Text className="text-white/80 text-xs mt-1">{stat.label}</Text>
+            </View>
+          ))}
         </View>
       </LinearGradient>
 
       {/* Info Cards Container */}
-      <View className="px-6 -mt-12">
+      <View className="px-6 -mt-8">
         {/* Contact Information Card */}
-        <View className="bg-white rounded-2xl p-6 shadow-md mb-6">
+        <View className="bg-white rounded-2xl p-6 shadow-lg mb-6 border border-gray-100">
           <View className="flex-row items-center mb-4">
-            <View className="bg-green-100 p-2 rounded-full">
-              <MaterialIcons name="contact-phone" size={24} color="#16a34a" />
+            <View className="bg-orange-100 p-2 rounded-full">
+              <MaterialIcons name="contact-phone" size={24} color="#f97316" />
             </View>
             <Text className="text-lg font-rubik-semibold text-gray-800 ml-3">Contact Information</Text>
           </View>
-          
           <View className="space-y-4">
             <View className="flex-row items-center">
-              <MaterialIcons name="phone" size={20} color="#16a34a" />
+              <MaterialIcons name="phone" size={20} color="#f97316" />
               <Text className="text-gray-700 ml-3 font-rubik">{profile?.phone || 'Not provided'}</Text>
             </View>
             <View className="flex-row items-center">
-              <MaterialIcons name="location-on" size={20} color="#16a34a" />
+              <MaterialIcons name="location-on" size={20} color="#f97316" />
               <Text className="text-gray-700 ml-3 font-rubik flex-1">{profile?.address || 'Not provided'}</Text>
             </View>
           </View>
         </View>
 
         {/* Skills & Experience Card */}
-        <View className="bg-white rounded-2xl p-6 shadow-md mb-6">
+        <View className="bg-white rounded-2xl p-6 shadow-lg mb-6 border border-gray-100">
           <View className="flex-row items-center mb-4">
-            <View className="bg-green-100 p-2 rounded-full">
-              <FontAwesome5 name="user-graduate" size={20} color="#16a34a" />
+            <View className="bg-orange-100 p-2 rounded-full">
+              <FontAwesome5 name="user-graduate" size={20} color="#f97316" />
             </View>
             <Text className="text-lg font-rubik-semibold text-gray-800 ml-3">Skills & Experience</Text>
           </View>
-          
           <View className="space-y-4">
             <View>
               <Text className="text-gray-600 font-rubik-medium mb-2">Languages</Text>
               <View className="flex-row flex-wrap gap-2">
                 {(profile?.languages || 'English').split(',').map((language, index) => (
-                  <View key={index} className="bg-green-100 px-3 py-1 rounded-full">
-                    <Text className="text-green-700 font-rubik">{language.trim()}</Text>
+                  <View key={index} className="bg-orange-100 px-3 py-1 rounded-full mb-2">
+                    <Text className="text-orange-700 font-rubik">{language.trim()}</Text>
                   </View>
                 ))}
               </View>
@@ -187,18 +194,17 @@ export default function ProfileScreen() {
         </View>
 
         {/* Communities Card */}
-        <View className="bg-white rounded-2xl p-6 shadow-md mb-8">
+        <View className="bg-white rounded-2xl p-6 shadow-lg mb-8 border border-gray-100">
           <View className="flex-row items-center mb-4">
-            <View className="bg-green-100 p-2 rounded-full">
-              <FontAwesome5 name="users" size={20} color="#16a34a" />
+            <View className="bg-orange-100 p-2 rounded-full">
+              <FontAwesome5 name="users" size={20} color="#f97316" />
             </View>
             <Text className="text-lg font-rubik-semibold text-gray-800 ml-3">Associated Communities</Text>
           </View>
-          
           <View className="flex-row flex-wrap gap-2">
             {(profile?.associated_communities || 'None').split(',').map((community, index) => (
-              <View key={index} className="bg-green-50 px-4 py-2 rounded-xl">
-                <Text className="text-green-700 font-rubik">{community.trim()}</Text>
+              <View key={index} className="bg-orange-50 px-4 py-2 rounded-xl mb-2">
+                <Text className="text-orange-700 font-rubik">{community.trim()}</Text>
               </View>
             ))}
           </View>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Image, ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { supabase } from '../../../constants/supabaseConfig';
+import { supabase } from '../../../../constants/supabaseConfig';
 import { MaterialIcons } from '@expo/vector-icons';
 
 const DonationDetails = () => {

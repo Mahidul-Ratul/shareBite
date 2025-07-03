@@ -5,6 +5,8 @@ import { supabase } from "../../../constants/supabaseConfig";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import { Picker } from "@react-native-picker/picker";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
+import { BackHandler } from 'react-native';
 
 
 export default function LoginScreen() {
@@ -14,7 +16,15 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState<string>("Donor"); // Default role
   
-
+  // Prevent hardware back button from navigating back to protected screens
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBackPress = () => true; // Prevent default behavior
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () =>
+        BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+    }, [])
+  );
 
   const handleLogin = async () => {
     try {

@@ -19,6 +19,66 @@ const STATUS_STAGES = [
   { key: 'delivered the food', label: 'Donation Delivered', description: 'The donation has been delivered.' },
 ];
 
+// Add this helper function before DonationDetail
+const notifyNearbyVolunteers = async (donation: any) => {
+  // Helper: Geocode address to lat/lng
+  const geocodeAddress = async (address: string): Promise<{ lat: number; lng: number } | null> => {
+    try {
+      const response = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(address)}&key=ceea64097b1646c4b18647701f0a60dc&limit=1&countrycode=bd`);
+      const data = await response.json();
+      if (data.results && data.results.length > 0) {
+        return {
+          lat: data.results[0].geometry.lat,
+          lng: data.results[0].geometry.lng,
+        };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+  // Helper: Haversine distance (km)
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const R = 6371;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+  // Geocode donation location
+  const donationCoords = await geocodeAddress(donation.Location);
+  if (donationCoords) {
+    const { data: volunteers, error: volError } = await supabase.from('volunteer').select('*');
+    if (!volError && volunteers) {
+      const notifications = [];
+      for (const v of volunteers) {
+        if (!v.address) continue;
+        const vCoords = await geocodeAddress(v.address as string);
+        if (!vCoords) continue;
+        const distance = calculateDistance(donationCoords.lat, donationCoords.lng, vCoords.lat, vCoords.lng);
+        if (distance <= 10) {
+          notifications.push({
+            title: 'New Delivery Opportunity',
+            message: `A new donation (${donation.Types} - ${donation.Quantity}) is available for delivery nearby!`,
+            type: 'assigned',
+            isread: false,
+            for: 'volunteer',
+            donation_id: donation.id,
+            created_at: new Date().toISOString(),
+            volunteer_id: v.id,
+            ngo_id: donation.ngo_id,
+          });
+        }
+      }
+      if (notifications.length > 0) {
+        await supabase.from('notifications').insert(notifications);
+      }
+    }
+  }
+};
+
 const DonationDetail = () => {
   const { id } = useLocalSearchParams();
   const [donation, setDonation] = useState<any>(null);
@@ -79,6 +139,8 @@ const DonationDetail = () => {
             created_at: new Date().toISOString(),
           },
         ]);
+        // Notify nearby volunteers
+        await notifyNearbyVolunteers(donation);
       }
       Alert.alert('Success', `Donation has been ${status === 'approvedF' ? 'accepted' : 'rejected'}`, [
         { text: 'OK', onPress: () => router.back() },

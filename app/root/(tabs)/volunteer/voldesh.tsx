@@ -52,6 +52,28 @@ interface Volunteer {
   }>;
 }
 
+// News/Event type for recent stories
+interface NewsItem {
+  id: string;
+  title: string;
+  news: string;
+  tag: string;
+  created_at: string;
+  picture: string;
+  Location?: string;
+}
+
+// Donation type for recent activity
+interface DonationActivity {
+  id: string;
+  Details: string;
+  date: string;
+  meals: string;
+  Location: string;
+  Image?: string;
+  status: string;
+}
+
 export default function VolunteerHome() {
   const router = useRouter();
 
@@ -79,6 +101,13 @@ export default function VolunteerHome() {
     donationsHandled: '0',
     points: '0',
   });
+
+  // News state for recent events & stories
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [newsLoading, setNewsLoading] = useState(true);
+
+  const [recentDonations, setRecentDonations] = useState<DonationActivity[]>([]);
+  const [donationsLoading, setDonationsLoading] = useState(true);
 
   // Fetch volunteer data from the backend
   useEffect(() => {
@@ -114,6 +143,86 @@ export default function VolunteerHome() {
     };
 
     fetchVolunteerData();
+  }, []);
+
+  useEffect(() => {
+    // Fetch recent news/events
+    const fetchNews = async () => {
+      setNewsLoading(true);
+      const { data, error } = await supabase
+        .from('news')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(3);
+      if (!error && data) setNews(data);
+      setNewsLoading(false);
+    };
+    fetchNews();
+  }, []);
+
+  useEffect(() => {
+    // Fetch recent donations assisted by this volunteer
+    const fetchRecentDonations = async () => {
+      setDonationsLoading(true);
+      try {
+        const email = await AsyncStorage.getItem('userEmail');
+        if (!email) return;
+        // Get volunteer id
+        const { data: volunteerData, error: volunteerError } = await supabase
+          .from('volunteer')
+          .select('id')
+          .eq('email', email)
+          .maybeSingle();
+        if (volunteerError || !volunteerData) return;
+        const volunteerId = volunteerData.id;
+        // Debug log
+        console.log('Volunteer ID used for donation query:', volunteerId);
+        // Fetch all donations where this volunteer assisted
+        const { data: donations, error: donationsError } = await supabase
+          .from('donation')
+          .select('id, Details, Quantity, Location, Image, status')
+          .eq('volunteer_id', volunteerId)
+          .order('id', { ascending: false })
+          .limit(5);
+        
+        if (!donationsError && donations) {
+          setRecentDonations(
+            donations.map((d: any) => {
+              // Handle image data - it might be a stringified array or a single string
+              let imageData = undefined;
+              if (d.Image) {
+                try {
+                  // Try to parse as JSON array first
+                  const imageArray = JSON.parse(d.Image);
+                  if (Array.isArray(imageArray) && imageArray.length > 0) {
+                    imageData = imageArray[0]; // Take the first image
+                  } else {
+                    imageData = d.Image; // Use as single string
+                  }
+                } catch (e) {
+                  // If parsing fails, use as single string
+                  imageData = d.Image;
+                }
+              }
+              
+              return {
+                id: d.id,
+                Details: d.Details || 'Donation',
+                date: '-',
+                meals: d.Quantity || '-',
+                Location: d.Location || '-',
+                Image: imageData,
+                status: d.status || '',
+              };
+            })
+          );
+        }
+      } catch (err) {
+        // ignore
+      }
+      setDonationsLoading(false);
+    };
+    fetchRecentDonations();
   }, []);
 
   return (
@@ -226,48 +335,120 @@ export default function VolunteerHome() {
             </View>
           </View>
 
-          {/* Announcements Section */}
+          {/* Recent Events & Stories Section */}
           <View className="bg-white rounded-xl shadow-lg shadow-gray-200 border border-gray-100 p-4 mb-6">
             <View className="flex-row justify-between items-center mb-4">
-              <Text className="text-lg font-rubik-bold text-gray-800">Announcements</Text>
-              <TouchableOpacity>
+              <Text className="text-lg font-rubik-bold text-gray-800">Recent Events & Stories</Text>
+              <TouchableOpacity onPress={() => router.push('../All_News')}>
                 <Text className="text-orange-500 font-rubik-medium">View All</Text>
               </TouchableOpacity>
             </View>
-            <View className="bg-orange-50 rounded-xl p-4">
-              <View className="flex-row items-center mb-2">
-                <MaterialIcons name="campaign" size={20} color="#F97316" />
-                <Text className="text-orange-700 font-rubik-medium ml-2">New Campaign</Text>
-              </View>
-              <Text className="text-gray-700">Join our weekend food distribution drive!</Text>
-              <Text className="text-gray-500 text-sm mt-2">2 hours ago</Text>
-            </View>
+            {newsLoading ? (
+              <Text className="text-gray-400 text-center">Loading...</Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-3">
+                {news.map((item, idx) => (
+                  <View key={item.id || idx} className="bg-white p-4 rounded-2xl shadow-md mr-4 w-72 border border-gray-100">
+                    <View className="absolute top-5 right-5 bg-black/50 px-3 py-1 rounded-full z-10">
+                      <Text className="text-white font-rubik-medium text-xs">{item.created_at ? new Date(item.created_at).toLocaleDateString() : ''}</Text>
+                    </View>
+                    <Image
+                      source={item.picture.startsWith('data:') ? { uri: item.picture } : { uri: `data:image/jpeg;base64,${item.picture}` }}
+                      className="w-full h-40 rounded-xl mb-3"
+                      resizeMode="cover"
+                    />
+                    <View className="flex-row justify-between items-center mb-2">
+                      <View className={`px-3 py-1 rounded-full ${item.tag === 'Featured' ? 'bg-blue-50' : item.tag === 'Holiday Special' ? 'bg-orange-50' : 'bg-green-50'}`}> 
+                        <Text className={`font-rubik-medium text-sm ${item.tag === 'Featured' ? 'text-blue-600' : item.tag === 'Holiday Special' ? 'text-orange-600' : 'text-green-600'}`}>{item.tag || 'Latest Update'}</Text>
+                      </View>
+                      <View className="flex-row items-center">
+                        <MaterialIcons name="restaurant" size={16} color="#16a34a" />
+                        <Text className="text-green-600 font-rubik text-sm ml-1">{item.title}</Text>
+                      </View>
+                    </View>
+                    <Text className="text-lg font-rubik-medium text-gray-800 mb-2">
+                      {item.title}
+                    </Text>
+                    <Text className="text-gray-600 font-rubik text-sm mb-3">
+                      {item.news}
+                    </Text>
+                    <View className="flex-row justify-between items-center">
+                      <View className="flex-row items-center">
+                        <MaterialIcons name="schedule" size={16} color="#6B7280" />
+                        <Text className="text-gray-500 font-rubik text-sm ml-1">{item.created_at ? new Date(item.created_at).toLocaleDateString() : ''}</Text>
+                      </View>
+                      <View className="flex-row items-center">
+                        <MaterialIcons name="location-on" size={16} color="#6B7280" />
+                        <Text className="text-gray-500 font-rubik text-sm ml-1">{item.Location || 'N/A'}</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
           </View>
 
-          {/* Community Feed */}
-          <View className="bg-white rounded-xl shadow-lg shadow-gray-200 border border-gray-100 p-4 mb-6">
-            <View className="flex-row justify-between items-center mb-4">
-              <Text className="text-lg font-rubik-bold text-gray-800">Community Feed</Text>
-              <TouchableOpacity>
-                <Text className="text-orange-500 font-rubik-medium">View All</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View className="bg-gray-50 rounded-xl p-4 mr-4 w-64">
-                <Image
-                  source={require('@/assets/images/vol.jpg')}
-                  className="w-full h-32 rounded-xl mb-3"
-                  resizeMode="cover"
-                />
-                <Text className="text-gray-900 font-rubik-medium">Food Distribution Success!</Text>
-                <Text className="text-gray-600 text-sm mt-1">100 meals delivered today</Text>
-                <View className="flex-row items-center mt-2">
-                  <MaterialIcons name="favorite" size={16} color="#EF4444" />
-                  <Text className="text-gray-500 text-sm ml-1">24 likes</Text>
-                </View>
-              </View>
+          {/* Recent Activity */}
+          <Text className="text-xl font-rubik-bold text-gray-800 mb-4">Recent Activity</Text>
+          {donationsLoading ? (
+            <Text className="text-gray-400 mb-6">Loading...</Text>
+          ) : recentDonations.length === 0 ? (
+            <Text className="text-gray-400 mb-6">No recent donations found.</Text>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-6">
+              {recentDonations.map((donation) => {
+                // Color badge based on status
+                let badgeColor = 'bg-gray-100';
+                let textColor = 'text-gray-600';
+                if (donation.status === 'delivered the food') {
+                  badgeColor = 'bg-green-100';
+                  textColor = 'text-green-700';
+                } else if (donation.status === 'on the way to deliver food' || donation.status === 'on the way to receive food') {
+                  badgeColor = 'bg-blue-100';
+                  textColor = 'text-blue-700';
+                }
+                return (
+                  <View
+                    key={donation.id}
+                    className="bg-white rounded-xl shadow-sm border border-gray-100 mr-4 w-72"
+                  >
+                    <Image
+                      source={
+                        donation.Image 
+                          ? donation.Image.startsWith('data:') 
+                            ? { uri: donation.Image }
+                            : { uri: `data:image/jpeg;base64,${donation.Image}` }
+                          : require('@/assets/images/food.jpg')
+                      }
+                      className="w-full h-40 rounded-t-xl"
+                      resizeMode="cover"
+                    />
+                    <View className="p-4">
+                      <View className="flex-row justify-between items-center mb-2">
+                        <View className={`${badgeColor} px-3 py-1 rounded-full`}>
+                          <Text className={`${textColor} text-xs font-rubik-medium capitalize`}>
+                            {donation.status || 'Status unknown'}
+                          </Text>
+                        </View>
+                        <Text className="text-gray-500 text-xs">{donation.date}</Text>
+                      </View>
+                      <Text className="text-lg font-rubik-bold text-gray-800 mb-1">
+                        {donation.Details}
+                      </Text>
+                      <View className="flex-row items-center mb-2">
+                        <MaterialIcons name="restaurant" size={16} color="#16A34A" />
+                        <Text className="text-green-600 text-sm ml-1">{donation.meals} meals</Text>
+                      </View>
+                      <View className="flex-row items-center">
+                        <MaterialIcons name="location-on" size={16} color="#6B7280" />
+                        <Text className="text-gray-600 text-sm ml-1">{donation.Location}</Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
             </ScrollView>
-          </View>
+          )}
 
           {/* Quick Actions */}
           <View className="bg-white rounded-xl shadow-lg shadow-gray-200 border border-gray-100 p-4 mb-6">
@@ -326,59 +507,6 @@ export default function VolunteerHome() {
               </TouchableOpacity>
             </View>
           </View>
-
-          {/* Recent Activity */}
-          <Text className="text-xl font-rubik-bold text-gray-800 mb-4">Recent Activity</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-6">
-            {volunteer.recentActivity.map((activity: {
-              id: string;
-              image: string | number;
-              type: string;
-              typeColor: string;
-              date: string;
-              title: string;
-              description: string;
-              meals: string;
-              location: string;
-            }) => (
-              <View
-                key={activity.id}
-                className="bg-white rounded-xl shadow-sm border border-gray-100 mr-4 w-300"
-              >
-                <Image
-                  source={typeof activity.image === 'string' ? { uri: activity.image } : activity.image}
-                  className="w-full h-40 rounded-t-xl"
-                  resizeMode="cover"
-                />
-                <View className="p-4">
-                  <View className="flex-row justify-between items-center mb-2">
-                    <View className={`bg-${activity.typeColor}-50 px-3 py-1 rounded-full`}>
-                      <Text className={`text-${activity.typeColor}-600 text-xs font-rubik-medium`}>
-                        {activity.type}
-                      </Text>
-                    </View>
-                    <Text className="text-gray-500 text-xs">{activity.date}</Text>
-                  </View>
-                  <Text className="text-lg font-rubik-bold text-gray-800 mb-1">
-                    {activity.title}
-                  </Text>
-                  <Text className="text-gray-600 text-sm mb-3">
-                    {activity.description}
-                  </Text>
-                  <View className="flex-row justify-between items-center">
-                    <View className="flex-row items-center">
-                      <MaterialIcons name="restaurant" size={16} color="#16A34A" />
-                      <Text className="text-green-600 text-sm ml-1">{activity.meals} meals</Text>
-                    </View>
-                    <View className="flex-row items-center">
-                      <MaterialIcons name="location-on" size={16} color="#6B7280" />
-                      <Text className="text-gray-600 text-sm ml-1">{activity.location}</Text>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            ))}
-          </ScrollView>
         </View>
       </ScrollView>
 

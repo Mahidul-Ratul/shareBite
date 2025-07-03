@@ -3,6 +3,8 @@ import { View, Text, ScrollView, TouchableOpacity, Image, Modal, Dimensions, Act
 import { MaterialIcons, FontAwesome, Ionicons } from "@expo/vector-icons";
 import { Link } from "expo-router";
 import { supabase } from '../../../../constants/supabaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import BottomNavigation from "./BottomNavigation";
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -199,34 +201,7 @@ export default function PastDonations() {
       )}
 
       {/* Bottom Navigation */}
-      <View className="flex-row justify-between items-center bg-white py-3 px-6 border-t border-gray-200">
-        <Link href="./ngohome" asChild>
-          <TouchableOpacity className="items-center flex-1">
-            <FontAwesome name="home" size={24} color="#6B7280" />
-            <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Home</Text>
-          </TouchableOpacity>
-        </Link>
-        <Link href="./request" asChild>
-            <TouchableOpacity className="items-center flex-1">
-              <View className="bg-orange-500 p-3 rounded-full -mt-8 border-4 border-white shadow-lg">
-                <FontAwesome name="plus" size={24} color="white" />
-              </View>
-              <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Request</Text>
-            </TouchableOpacity>
-          </Link>
-        <Link href="./past_donat" asChild>
-          <TouchableOpacity className="items-center flex-1">
-            <FontAwesome name="history" size={24} color="#F97316" />
-            <Text className="text-orange-500 text-xs mt-1 font-rubik-medium">History</Text>
-          </TouchableOpacity>
-        </Link>
-        <Link href="./settings" asChild>
-          <TouchableOpacity className="items-center flex-1">
-            <Ionicons name="settings-outline" size={24} color="#6B7280" />
-            <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Settings</Text>
-          </TouchableOpacity>
-        </Link>
-      </View>
+      <BottomNavigation currentPage="past_donat" />
 
       {/* Image Viewer Modal */}
       {selectedImages && (
