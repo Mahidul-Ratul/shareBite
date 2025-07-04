@@ -3,33 +3,28 @@ import {
   View,
   Text,
   TextInput,
-  ImageBackground,
   TouchableOpacity,
   Alert,
   Image,
   ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  TouchableWithoutFeedback,
-  Keyboard,
 } from "react-native";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { supabase } from "../../../../constants/supabaseConfig";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import { Picker } from "@react-native-picker/picker";
-
+import logo from "@/assets/images/icon.png";
 
 interface UserData {
   fullName: string;
   email: string;
   phoneNumber: string;
   address: string;
+  location: string;
   password: string;
-  profileImage: string | null; // Add profileImage to store image URI
+  profileImage: string | null;
   type: string;
 }
-
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -37,14 +32,14 @@ export default function SignUpScreen() {
   const [email, setEmail] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [address, setAddress] = useState("");
+  const [location, setLocation] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [image, setImage] = useState<string | null>(null); // Store base64 image string
+  const [image, setImage] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [userType, setUserType] = useState("Individual"); // Default value
+  const [userType, setUserType] = useState("Individual");
 
-  // Image picker function
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
@@ -60,9 +55,6 @@ export default function SignUpScreen() {
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const imageUri = result.assets[0].uri;
       setImage(imageUri);
-      console.log("Image URI:", imageUri);
-
-      // Convert image to base64
       try {
         const base64Image = await fetch(imageUri)
           .then((response) => response.blob())
@@ -72,144 +64,125 @@ export default function SignUpScreen() {
             reader.onerror = reject;
             reader.readAsDataURL(blob);
           }));
-
-        // Now store the base64 image string
         setImage(base64Image);
-        console.log("Base64 Image String:", base64Image);
       } catch (error) {
         console.log("Error converting image to base64:", error);
       }
     }
   };
 
-  // Handle sign up
   const handleSignUp = async () => {
     if (password !== confirmPassword) {
       Alert.alert("Error", "Passwords do not match!");
       return;
     }
     try {
-      console.log("Attempting sign-up...");
-      // First, sign up with Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
-      if (authError) {
-        console.log("Auth Error:", authError.message);
-        throw authError;
-      }
+      if (authError) throw authError;
       let imageUrl = null;
-      if (image) {
-        imageUrl = image;
-      }
-      console.log("Inserting user data into database...");
-      const userData: UserData = { fullName, email, phoneNumber, address, password, profileImage: imageUrl || "", type: userType };
+      if (image) imageUrl = image;
+      const userData: UserData = { fullName, email, phoneNumber, address, location, password, profileImage: imageUrl || "", type: userType };
       const { error: insertError } = await supabase.from("users").insert([userData]);
-      if (insertError) {
-        console.log("Database Insert Error:", insertError.message);
-        throw insertError;
-      }
+      if (insertError) throw insertError;
       Alert.alert("Success", "Sign-up successful! Please log in.");
       router.push("../login");
     } catch (error) {
-      console.log("Sign-Up Error:", error);
       Alert.alert("Error", error instanceof Error ? error.message : "An unknown error occurred");
     }
   };
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        className="flex-1"
-      >
-        <ImageBackground
-          source={require("@/assets/images/pexels-photo-6591162.webp")}
-          className="flex-1 bg-black/50"
-        >
-          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingHorizontal: 20 }}>
-            <Text className="text-white font-rubik-bold text-3xl mb-6 text-center">Sign Up</Text>
-            <TextInput
-              className="w-full bg-white/40 p-3 font-rubik-medium rounded-lg text-black text-lg mb-4"
-              placeholder="Full Name"
-              placeholderTextColor="#ffffff"
-              value={fullName}
-              onChangeText={setFullName}
-            />
-            <TextInput
-              className="w-full bg-white/40 p-3 font-rubik-medium rounded-lg text-black text-lg mb-4"
-              placeholder="Email"
-              placeholderTextColor="#ffffff"
-              value={email}
-              onChangeText={setEmail}
-            />
-            <TextInput
-              className="w-full bg-white/40 p-3 font-rubik-medium rounded-lg text-black text-lg mb-4"
-              placeholder="Phone Number"
-              placeholderTextColor="#ffffff"
-              value={phoneNumber}
-              onChangeText={setPhoneNumber}
-            />
-            <TextInput
-              className="w-full bg-white/40 p-3 font-rubik-medium rounded-lg text-black text-lg mb-4"
-              placeholder="Address"
-              placeholderTextColor="#ffffff"
-              value={address}
-              onChangeText={setAddress}
-            />
-
-            {/* User Type Selection */}
-            <View className="w-full bg-white/40 font-rubik-medium text-lg rounded-lg mb-4">
-              <Picker
-                selectedValue={userType}
-                onValueChange={(itemValue) => setUserType(itemValue)}
-                style={{ color: "white" }}
-              >
-                <Picker.Item label="Individual" value="Individual" />
-                <Picker.Item label="Restaurants" value="Restaurants" />
-                <Picker.Item label="Caterer" value="Caterer" />
-              </Picker>
-            </View>
-
-            <View className="w-full bg-white/40 rounded-lg px-2 flex-row items-center mb-4">
-              <TextInput
-                className="flex-1 text-white font-rubik-medium text-lg"
-                placeholder="Password"
-                placeholderTextColor="#ffffff"
-                secureTextEntry={!showPassword}
-                value={password}
-                onChangeText={setPassword}
-              />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                <MaterialCommunityIcons name={showPassword ? "eye" : "eye-off"} size={24} color="white" />
-              </TouchableOpacity>
-            </View>
-
-            <View className="w-full bg-white/40 rounded-lg px-2 flex-row items-center mb-4">
-              <TextInput
-                className="flex-1 text-white font-rubik-medium text-lg"
-                placeholder="Confirm Password"
-                placeholderTextColor="#ffffff"
-                secureTextEntry={!showConfirmPassword}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-              />
-              <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
-                <MaterialCommunityIcons name={showConfirmPassword ? "eye" : "eye-off"} size={24} color="white" />
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity className="w-full bg-white/40 p-3 rounded-lg mb-4 flex-row items-center justify-center" onPress={pickImage}>
-              <Text className="text-white font-rubik-medium text-lg text-center">📷 Pick Profile Image</Text>
-            </TouchableOpacity>
-            {image && (
-              <Image source={{ uri: image }} className="w-24 h-24 rounded-full mb-4 border-2 border-white" />
-            )}
-
-            <TouchableOpacity className="w-full bg-orange-500 p-4 rounded-lg" onPress={handleSignUp}>
-              <Text className="text-white text-lg font-rubik-semibold text-center">Sign Up</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </ImageBackground>
-      </KeyboardAvoidingView>
-    </TouchableWithoutFeedback>
+    <ScrollView className="p-2 bg-white">
+      <View style={{ width: '100%', maxWidth: 400, backgroundColor: 'white', borderRadius: 20, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 4, marginVertical: 32, alignSelf: 'center' }}>
+        
+        <Text className="font-rubik-bold text-3xl mb-6 text-center" style={{ color: '#1e293b' }}>Sign Up</Text>
+        <TextInput
+          className="h-12 border border-green-600 font-rubik rounded-lg mb-4 px-4 bg-white"
+          placeholder="Full Name"
+          placeholderTextColor="#56ab2f"
+          value={fullName}
+          onChangeText={setFullName}
+        />
+        <TextInput
+          className="h-12 border border-green-600 font-rubik rounded-lg mb-4 px-4 bg-white"
+          placeholder="Email"
+          placeholderTextColor="#56ab2f"
+          value={email}
+          onChangeText={setEmail}
+        />
+        <TextInput
+          className="h-12 border border-green-600 font-rubik rounded-lg mb-4 px-4 bg-white"
+          placeholder="Phone Number"
+          placeholderTextColor="#56ab2f"
+          value={phoneNumber}
+          onChangeText={setPhoneNumber}
+        />
+        <TextInput
+          className="h-12 border border-green-600 font-rubik rounded-lg mb-4 px-4 bg-white"
+          placeholder="Address"
+          placeholderTextColor="#56ab2f"
+          value={address}
+          onChangeText={setAddress}
+        />
+        <TextInput
+          className="h-12 border border-green-600 font-rubik rounded-lg mb-4 px-4 bg-white"
+          placeholder="Location"
+          placeholderTextColor="#56ab2f"
+          value={location}
+          onChangeText={setLocation}
+        />
+        <View className="border border-green-600 rounded-lg mb-4" style={{ backgroundColor: '#e6f4ea' }}>
+          <Picker
+            selectedValue={userType}
+            onValueChange={(itemValue) => setUserType(itemValue)}
+            style={{ color: "#388e3c" }}
+          >
+            <Picker.Item label="Individual" value="Individual" />
+            <Picker.Item label="Restaurants" value="Restaurants" />
+            <Picker.Item label="Caterer" value="Caterer" />
+          </Picker>
+        </View>
+        <View className="rounded-lg px-2 flex-row items-center mb-4 border border-green-600 bg-white">
+          <TextInput
+            className="flex-1 text-black font-rubik-medium text-lg"
+            placeholder="Password"
+            placeholderTextColor="#56ab2f"
+            secureTextEntry={!showPassword}
+            value={password}
+            onChangeText={setPassword}
+          />
+          <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+            <MaterialCommunityIcons name={showPassword ? "eye" : "eye-off"} size={24} color="#388e3c" />
+          </TouchableOpacity>
+        </View>
+        <View className="rounded-lg px-2 flex-row items-center mb-4 border border-green-600 bg-white">
+          <TextInput
+            className="flex-1 text-black font-rubik-medium text-lg"
+            placeholder="Confirm Password"
+            placeholderTextColor="#56ab2f"
+            secureTextEntry={!showConfirmPassword}
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+          />
+          <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+            <MaterialCommunityIcons name={showConfirmPassword ? "eye" : "eye-off"} size={24} color="#388e3c" />
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity className="w-full p-3 bg-green-500 rounded-lg mb-4 flex-row items-center justify-center" onPress={pickImage}>
+          <Text className="text-center font-rubik-medium text-base text-white">Pick Profile Image</Text>
+        </TouchableOpacity>
+        {image && (
+          <View style={{ alignItems: 'center', marginBottom: 16 }}>
+            <Image source={{ uri: image }} style={{ width: 80, height: 80, borderRadius: 40, marginBottom: 8 }} />
+          </View>
+        )}
+        <TouchableOpacity className="w-full p-3 bg-green-600 rounded-lg mb-4" onPress={handleSignUp}>
+          <Text className="text-center font-rubik-bold text-lg text-white">Sign Up</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push("../login")}> 
+          <Text className="text-center font-rubik-medium text-base text-green-700">Already have an account? <Text style={{ color: '#388e3c', fontWeight: 'bold' }}>Log In</Text></Text>
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
   );
 }
