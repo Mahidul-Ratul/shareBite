@@ -1,153 +1,308 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Image, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Dimensions } from 'react-native';
-import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
+import { View, Text, Image, ScrollView, TouchableOpacity, ActivityIndicator, Alert, ImageBackground, Dimensions } from 'react-native';
+import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { supabase } from '../../../../constants/supabaseConfig';
-
-const { width } = Dimensions.get('window');
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export default function ReceiverProfile() {
+  const router = useRouter();
   const [receiver, setReceiver] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    totalRequests: 0,
+    completedRequests: 0,
+    pendingRequests: 0,
+    totalDonations: 0,
+  });
 
   useEffect(() => {
-    const fetchReceiver = async () => {
+    const fetchReceiverData = async () => {
       setLoading(true);
-      // Get logged in user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      try {
+        const userEmail = await AsyncStorage.getItem("userEmail");
+        if (!userEmail) {
+          Alert.alert('Error', 'No user email found');
+          return;
+        }
+
+        // Get receiver info by email
+        const { data, error } = await supabase
+          .from('receiver')
+          .select('*')
+          .eq('email', userEmail)
+          .single();
+
+        if (error) throw error;
+        setReceiver(data);
+
+        // Fetch statistics
+        const { count: totalRequests } = await supabase
+          .from('donation')
+          .select('id', { count: 'exact', head: true })
+          .eq('receiver_id', data.id);
+
+        const { count: completedRequests } = await supabase
+          .from('donation')
+          .select('id', { count: 'exact', head: true })
+          .eq('receiver_id', data.id)
+          .eq('status', 'delivered the food');
+
+        const { count: pendingRequests } = await supabase
+          .from('donation')
+          .select('id', { count: 'exact', head: true })
+          .eq('receiver_id', data.id)
+          .in('status', ['pending', 'approved', 'approvedF']);
+
+        setStats({
+          totalRequests: totalRequests || 0,
+          completedRequests: completedRequests || 0,
+          pendingRequests: pendingRequests || 0,
+          totalDonations: totalRequests || 0,
+        });
+
+      } catch (error) {
+        console.error('Error fetching receiver data:', error);
+        Alert.alert('Error', 'Failed to load profile data');
+      } finally {
         setLoading(false);
-        return;
       }
-      // Get receiver info by email
-      const { data, error } = await supabase
-        .from('receiver')
-        .select('*')
-        .eq('email', user.email)
-        .single();
-      if (!error && data) setReceiver(data);
-      setLoading(false);
     };
-    fetchReceiver();
+
+    fetchReceiverData();
   }, []);
 
- 
+  const handleLogout = async () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            await AsyncStorage.clear();
+            await supabase.auth.signOut();
+            router.replace('/root/(tabs)/login');
+          },
+        },
+      ]
+    );
+  };
 
   const handleEditProfile = () => {
-    // Navigate to edit profile page (implement this page if needed)
-    // router.push('/root/(tabs)/receiver/edit-profile');
+    router.push('./edit-profile');
   };
 
   if (loading) {
     return (
-      <View style={styles.centered}><ActivityIndicator size="large" color="#6366f1" /></View>
+      <View className="flex-1 bg-white justify-center items-center">
+        <ActivityIndicator size="large" color="#F97316" />
+        <Text className="text-gray-600 mt-4">Loading profile...</Text>
+      </View>
     );
   }
+
   if (!receiver) {
     return (
-      <View style={styles.centered}><Text style={{ color: '#dc2626' }}>Receiver profile not found.</Text></View>
+      <View className="flex-1 bg-white justify-center items-center">
+        <MaterialIcons name="error" size={48} color="#DC2626" />
+        <Text className="text-red-600 mt-4 text-lg">Profile not found</Text>
+      </View>
     );
   }
 
   // Prepare image
   let imageUri = receiver.image_url;
-  if (imageUri && !imageUri.startsWith('data:image')) {
+  if (imageUri && !imageUri.startsWith('data:image') && !imageUri.startsWith('http')) {
     imageUri = `data:image/jpeg;base64,${imageUri}`;
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff7ed' }}>
-      <ScrollView style={{ flex: 1, backgroundColor: '#fff7ed' }} contentContainerStyle={{ paddingBottom: 40 }}>
-        {/* Smart Profile Header with Actions */}
-        <View style={{
-          backgroundColor: '#fff',
-          borderBottomLeftRadius: 36,
-          borderBottomRightRadius: 36,
-          overflow: 'hidden',
-          alignItems: 'center',
-          paddingTop: 48,
-          paddingBottom: 24,
-          shadowColor: '#f97316',
-          shadowOffset: { width: 0, height: 8 },
-          shadowOpacity: 0.18,
-          shadowRadius: 16,
-          elevation: 8,
-          marginBottom: 12,
-        }}>
-          <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'flex-end', paddingHorizontal: 24, marginBottom: 8 }}>
-            <TouchableOpacity onPress={handleEditProfile} style={{ marginRight: 18 }}>
-              <MaterialIcons name="edit" size={26} color="#f97316" />
-            </TouchableOpacity>
-            <TouchableOpacity >
-              <MaterialIcons name="logout" size={26} color="#f97316" />
+    <View className="flex-1 bg-white">
+      <ScrollView className="flex-1">
+        {/* Subtle Gradient Background at Top */}
+        <LinearGradient
+          colors={['#fff7ed', '#fbbf24', '#fff']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 180, zIndex: 0 }}
+        />
+
+        {/* Profile Card - Card Stack Layout */}
+        <View style={{ marginHorizontal: 24, marginTop: 80, marginBottom: 32, backgroundColor: '#fff', borderRadius: 24, paddingTop: 70, paddingBottom: 24, paddingHorizontal: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2, alignItems: 'center', position: 'relative', zIndex: 2 }}>
+          {/* Profile Image Overlapping Card - Robust Centering */}
+          <View style={{ position: 'absolute', top: -60, left: 0, right: 0, alignItems: 'center', zIndex: 3 }}>
+            <Image
+              source={imageUri ? { uri: imageUri } : require('@/assets/images/avatar.png')}
+              style={{ width: 120, height: 120, borderRadius: 60, borderWidth: 3, borderColor: '#f97316', backgroundColor: '#fff' }}
+            />
+            <TouchableOpacity onPress={handleEditProfile} style={{ position: 'absolute', bottom: 8, right: 8, backgroundColor: '#fff', borderRadius: 20, padding: 8, shadowColor: '#f97316', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4, elevation: 3 }}>
+              <MaterialIcons name="edit" size={20} color="#f97316" />
             </TouchableOpacity>
           </View>
-          <View style={{ alignItems: 'center' }}>
-            <View style={{
-              borderWidth: 4,
-              borderColor: '#f97316',
-              borderRadius: 100,
-              overflow: 'hidden',
-              width: 120,
-              height: 120,
-              backgroundColor: '#fff',
-              marginBottom: 10,
-              shadowColor: '#f97316',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.18,
-              shadowRadius: 8,
-              elevation: 6,
-            }}>
-              {imageUri ? (
-                <Image source={{ uri: imageUri }} style={{ width: 120, height: 120 }} resizeMode="cover" />
-              ) : (
-                <FontAwesome5 name="user-alt" size={60} color="#f97316" style={{ marginTop: 30 }} />
-              )}
-            </View>
-            <Text style={{ color: '#f97316', fontSize: 28, fontWeight: 'bold', marginTop: 8, letterSpacing: 1 }}>{receiver.name}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, backgroundColor: '#fff7ed', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 4 }}>
-              <MaterialIcons name="groups" size={20} color="#f97316" />
-              <Text style={{ color: '#f97316', fontSize: 17, marginLeft: 8, fontWeight: '700', textTransform: 'capitalize', letterSpacing: 0.5 }}>{receiver.type}</Text>
+          <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#1e293b', marginBottom: 4, marginTop: 8, textAlign: 'center' }}>{receiver.name}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 2, marginBottom: 6, alignSelf: 'center' }}>
+            <MaterialIcons name="verified" size={18} color="#fbbf24" />
+            <Text style={{ color: '#f97316', fontWeight: '700', marginLeft: 6, textTransform: 'capitalize' }}>{receiver.type}</Text>
+          </View>
+          <Text style={{ color: '#64748b', fontSize: 14, fontStyle: 'italic', textAlign: 'center', marginBottom: 8 }}>
+            "Together, we can end hunger."
+          </Text>
+        </View>
+
+        {/* Impact Stats - Card Style */}
+        <View style={{ marginHorizontal: 24, marginBottom: 24, backgroundColor: '#fff', borderRadius: 20, padding: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 1, flexDirection: 'row', justifyContent: 'space-between' }}>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <MaterialIcons name="list" size={20} color="#f97316" />
+            <Text style={{ color: '#f97316', fontWeight: 'bold', fontSize: 18 }}>{stats.totalRequests}</Text>
+            <Text style={{ color: '#64748b', fontSize: 12 }}>Total</Text>
+          </View>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <MaterialIcons name="check-circle" size={20} color="#16a34a" />
+            <Text style={{ color: '#16a34a', fontWeight: 'bold', fontSize: 18 }}>{stats.completedRequests}</Text>
+            <Text style={{ color: '#64748b', fontSize: 12 }}>Completed</Text>
+          </View>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <MaterialIcons name="hourglass-empty" size={20} color="#2563eb" />
+            <Text style={{ color: '#2563eb', fontWeight: 'bold', fontSize: 18 }}>{stats.pendingRequests}</Text>
+            <Text style={{ color: '#64748b', fontSize: 12 }}>Pending</Text>
+          </View>
+        </View>
+
+        {/* Organization Information - Card Style */}
+        <View style={{ marginHorizontal: 24, marginBottom: 24, backgroundColor: '#fff', borderRadius: 20, padding: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 1 }}>
+          <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#f97316', marginBottom: 10 }}>Organization Information</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+            <MaterialIcons name="badge" size={20} color="#f97316" />
+            <Text style={{ color: '#374151', fontSize: 15, marginLeft: 10 }}>Registration: <Text style={{ fontWeight: 'bold' }}>{receiver.registration || 'N/A'}</Text></Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+            <MaterialIcons name="person" size={20} color="#f97316" />
+            <Text style={{ color: '#374151', fontSize: 15, marginLeft: 10 }}>Contact: <Text style={{ fontWeight: 'bold' }}>{receiver.contact_person || 'N/A'}</Text></Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+            <MaterialIcons name="phone" size={20} color="#f97316" />
+            <Text style={{ color: '#374151', fontSize: 15, marginLeft: 10 }}>Phone: <Text style={{ fontWeight: 'bold' }}>{receiver.phone || 'N/A'}</Text></Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+            <MaterialIcons name="email" size={20} color="#f97316" />
+            <Text style={{ color: '#374151', fontSize: 15, marginLeft: 10 }}>Email: <Text style={{ fontWeight: 'bold' }}>{receiver.email}</Text></Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+            <MaterialIcons name="groups" size={20} color="#f97316" />
+            <Text style={{ color: '#374151', fontSize: 15, marginLeft: 10 }}>Capacity: <Text style={{ fontWeight: 'bold' }}>{receiver.capacity || 'N/A'}</Text></Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 0 }}>
+            <MaterialIcons name="location-on" size={20} color="#f97316" />
+            <Text style={{ color: '#374151', fontSize: 15, marginLeft: 10 }}>Location: <Text style={{ fontWeight: 'bold' }}>{receiver.location || 'N/A'}</Text></Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
+            <MaterialIcons name="map" size={20} color="#f97316" />
+            <Text style={{ color: '#374151', fontSize: 15, marginLeft: 10 }}>Areas: <Text style={{ fontWeight: 'bold' }}>{receiver.areas || 'N/A'}</Text></Text>
+          </View>
+        </View>
+
+        {/* Quick Actions */}
+        <View className="px-6 mb-6">
+          <Text className="text-lg font-rubik-bold text-gray-800 mb-4">Quick Actions</Text>
+          
+          <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <View className="space-y-3">
+              <TouchableOpacity 
+                onPress={handleEditProfile}
+                className="flex-row items-center p-3 bg-orange-50 rounded-xl"
+              >
+                <View className="bg-orange-100 p-2 rounded-full">
+                  <MaterialIcons name="edit" size={20} color="#F97316" />
+                </View>
+                <View className="ml-3 flex-1">
+                  <Text className="text-gray-900 font-rubik-medium">Edit Profile</Text>
+                  <Text className="text-gray-600 text-sm">Update your organization information</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                onPress={() => router.push('./notification')}
+                className="flex-row items-center p-3 bg-blue-50 rounded-xl"
+              >
+                <View className="bg-blue-100 p-2 rounded-full">
+                  <MaterialIcons name="notifications" size={20} color="#2563EB" />
+                </View>
+                <View className="ml-3 flex-1">
+                  <Text className="text-gray-900 font-rubik-medium">Notifications</Text>
+                  <Text className="text-gray-600 text-sm">View your notifications</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                onPress={() => router.push('./past_donat')}
+                className="flex-row items-center p-3 bg-green-50 rounded-xl"
+              >
+                <View className="bg-green-100 p-2 rounded-full">
+                  <MaterialIcons name="history" size={20} color="#16A34A" />
+                </View>
+                <View className="ml-3 flex-1">
+                  <Text className="text-gray-900 font-rubik-medium">Donation History</Text>
+                  <Text className="text-gray-600 text-sm">View your donation history</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                onPress={() => router.push('./All_News')}
+                className="flex-row items-center p-3 bg-purple-50 rounded-xl"
+              >
+                <View className="bg-purple-100 p-2 rounded-full">
+                  <MaterialIcons name="article" size={20} color="#9333EA" />
+                </View>
+                <View className="ml-3 flex-1">
+                  <Text className="text-gray-900 font-rubik-medium">News & Updates</Text>
+                  <Text className="text-gray-600 text-sm">Stay updated with latest news</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
             </View>
           </View>
         </View>
 
-        {/* Smart Info Grid */}
-        <View style={{ paddingHorizontal: 18, marginTop: 8 }}>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
-            <View style={styles.smartCard}>
-              <MaterialIcons name="badge" size={28} color="#f97316" />
-              <Text style={smartCardLabel}>Registration</Text>
-              <Text style={smartCardValue}>{receiver.registration}</Text>
-            </View>
-            <View style={styles.smartCard}>
-              <MaterialIcons name="person" size={28} color="#f97316" />
-              <Text style={smartCardLabel}>Contact</Text>
-              <Text style={smartCardValue}>{receiver.contact_person}</Text>
-            </View>
-            <View style={styles.smartCard}>
-              <MaterialIcons name="phone" size={28} color="#f97316" />
-              <Text style={smartCardLabel}>Phone</Text>
-              <Text style={smartCardValue}>{receiver.phone}</Text>
-            </View>
-            <View style={styles.smartCard}>
-              <MaterialIcons name="email" size={28} color="#f97316" />
-              <Text style={smartCardLabel}>Email</Text>
-              <Text style={smartCardValue}>{receiver.email}</Text>
-            </View>
-            <View style={styles.smartCard}>
-              <MaterialIcons name="groups" size={28} color="#f97316" />
-              <Text style={smartCardLabel}>Capacity</Text>
-              <Text style={smartCardValue}>{receiver.capacity}</Text>
-            </View>
-            <View style={styles.smartCard}>
-              <MaterialIcons name="location-on" size={28} color="#f97316" />
-              <Text style={smartCardLabel}>Location</Text>
-              <Text style={smartCardValue}>{receiver.location}</Text>
-            </View>
-            <View style={styles.smartCard}>
-              <MaterialIcons name="area-chart" size={28} color="#f97316" />
-              <Text style={smartCardLabel}>Areas</Text>
-              <Text style={smartCardValue}>{receiver.areas}</Text>
+        {/* Account Settings */}
+        <View className="px-6 mb-8">
+          <Text className="text-lg font-rubik-bold text-gray-800 mb-4">Account Settings</Text>
+          
+          <View className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <View className="space-y-3">
+              <TouchableOpacity 
+                onPress={() => router.push('./settings')}
+                className="flex-row items-center p-3 bg-gray-50 rounded-xl"
+              >
+                <View className="bg-gray-100 p-2 rounded-full">
+                  <MaterialIcons name="settings" size={20} color="#6B7280" />
+                </View>
+                <View className="ml-3 flex-1">
+                  <Text className="text-gray-900 font-rubik-medium">Settings</Text>
+                  <Text className="text-gray-600 text-sm">Manage your account settings</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                onPress={handleLogout}
+                className="flex-row items-center p-3 bg-red-50 rounded-xl"
+              >
+                <View className="bg-red-100 p-2 rounded-full">
+                  <MaterialIcons name="logout" size={20} color="#DC2626" />
+                </View>
+                <View className="ml-3 flex-1">
+                  <Text className="text-red-600 font-rubik-medium">Logout</Text>
+                  <Text className="text-red-500 text-sm">Sign out of your account</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={20} color="#DC2626" />
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -155,38 +310,3 @@ export default function ReceiverProfile() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-  },
-  smartCard: {
-    width: '47%',
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 18,
-    alignItems: 'center',
-    shadowColor: '#f97316',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.10,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-});
-const smartCardLabel = {
-  fontSize: 15,
-  color: '#f97316',
-  fontWeight: '700' as const,
-  marginTop: 10,
-};
-const smartCardValue = {
-  fontSize: 16,
-  color: '#374151',
-  marginTop: 2,
-  fontWeight: '500' as const,
-  textAlign: 'center' as const,
-};

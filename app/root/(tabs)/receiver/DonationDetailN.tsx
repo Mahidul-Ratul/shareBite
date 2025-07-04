@@ -17,6 +17,8 @@ const STATUS_STAGES = [
   { key: 'food collected', label: 'Food Collected', description: 'The food has been collected by the volunteer.' },
   { key: 'on the way to deliver food', label: 'On The Way To Receiver', description: 'Volunteer is delivering the food to the receiver.' },
   { key: 'delivered the food', label: 'Donation Delivered', description: 'The donation has been delivered.' },
+  { key: 'receiver confirmed', label: 'Receiver Confirmed', description: 'You have confirmed receiving the food.' },
+  { key: 'receiver denied', label: 'Receiver Denied', description: 'You denied receiving the food.' },
 ];
 
 // Add this helper function before DonationDetail
@@ -233,6 +235,58 @@ const DonationDetail = () => {
     }
   };
 
+  // Helper to send notifications to admin and donor
+  const sendConfirmationNotifications = async (donation: any, confirmed: boolean) => {
+    const messages = [];
+    if (donation.donor_id) {
+      messages.push({
+        title: 'Receiver Confirmation',
+        message: confirmed ? 'The receiver has confirmed receiving the food.' : 'The receiver denied receiving the food.',
+        type: 'confirmation',
+        isread: false,
+        for: 'donor',
+        donation_id: donation.id,
+        created_at: new Date().toISOString(),
+        user_id: donation.donor_id,
+        ngo_id: donation.ngo_id,
+      });
+    }
+    messages.push({
+      title: 'Receiver Confirmation',
+      message: confirmed ? 'The receiver has confirmed receiving the food.' : 'The receiver denied receiving the food.',
+      type: 'confirmation',
+      isread: false,
+      for: 'admin',
+      donation_id: donation.id,
+      created_at: new Date().toISOString(),
+      ngo_id: donation.ngo_id,
+    });
+    if (messages.length > 0) {
+      await supabase.from('notifications').insert(messages);
+    }
+  };
+
+  // Receiver confirmation handler
+  const handleReceiverConfirm = async (confirmed: boolean) => {
+    setIsLoading(true);
+    try {
+      const newStatus = confirmed ? 'receiver confirmed' : 'receiver denied';
+      const { error } = await supabase
+        .from('donation')
+        .update({ status: newStatus })
+        .eq('id', id);
+      if (error) throw error;
+      // Send notifications to admin and donor
+      await sendConfirmationNotifications(donation, confirmed);
+      Alert.alert('Thank you', confirmed ? 'You have confirmed receiving the food.' : 'You have denied receiving the food.');
+      setDonation((prev: any) => ({ ...prev, status: newStatus }));
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update confirmation.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (isLoading) {
     return <Text>Loading...</Text>;
   }
@@ -430,6 +484,32 @@ const DonationDetail = () => {
                 <View className="flex-row items-center justify-center">
                   <MaterialIcons name="check" size={24} color="#fff" />
                   <Text className="text-white font-bold ml-2">Accept</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Receiver Confirmation if status is 'delivered the food' */}
+          {donation.status === 'delivered the food' && (
+            <View className="flex-row space-x-4 mt-8 mb-8">
+              <TouchableOpacity
+                className="flex-1 bg-red-600 rounded-xl py-4"
+                onPress={() => handleReceiverConfirm(false)}
+                disabled={isLoading}
+              >
+                <View className="flex-row items-center justify-center">
+                  <MaterialIcons name="close" size={24} color="#fff" />
+                  <Text className="text-white font-bold ml-2">No, I didn't receive</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-1 bg-green-600 rounded-xl py-4"
+                onPress={() => handleReceiverConfirm(true)}
+                disabled={isLoading}
+              >
+                <View className="flex-row items-center justify-center">
+                  <MaterialIcons name="check" size={24} color="#fff" />
+                  <Text className="text-white font-bold ml-2">Yes, I received</Text>
                 </View>
               </TouchableOpacity>
             </View>
