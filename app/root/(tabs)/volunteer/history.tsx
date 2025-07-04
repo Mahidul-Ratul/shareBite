@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
 import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { supabase } from '../../../../constants/supabaseConfig';
@@ -13,13 +13,13 @@ interface HistoryItem {
   date: string;
   time: string;
   meals: number;
-  status: 'completed' | 'cancelled' | 'delivered the food' | 'on the way to deliver food' | 'on the way to receive food';
+  status: 'completed' | 'ongoing';
   imageUrl?: string;
 }
 
 export default function MyTasksScreen() {
   const router = useRouter();
-  const [filter, setFilter] = useState<'all' | 'completed' | 'cancelled'>('all');
+  const [filter, setFilter] = useState<'all' | 'completed' | 'ongoing'>('all');
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -92,7 +92,7 @@ export default function MyTasksScreen() {
           } else if (d.status === 'on the way to deliver food' || d.status === 'on the way to receive food') {
             mappedStatus = 'completed'; // Treat as completed since it's in progress
           } else {
-            mappedStatus = 'cancelled';
+            mappedStatus = 'ongoing'; // Previously 'cancelled', now 'ongoing'
           }
 
           // Fallbacks for all fields
@@ -130,7 +130,7 @@ export default function MyTasksScreen() {
   const filteredHistory = history.filter(item => {
     if (filter === 'all') return true;
     if (filter === 'completed') return item.status === 'completed';
-    if (filter === 'cancelled') return item.status === 'cancelled';
+    if (filter === 'ongoing') return item.status === 'ongoing';
     return true;
   });
 
@@ -143,7 +143,7 @@ export default function MyTasksScreen() {
 
       {/* Filters */}
       <View className="flex-row px-6 py-4 bg-white border-b border-gray-200">
-        {(['all', 'completed', 'cancelled'] as const).map((type) => (
+        {(['all', 'completed', 'ongoing'] as const).map((type) => (
           <TouchableOpacity
             key={type}
             onPress={() => setFilter(type)}
@@ -165,7 +165,8 @@ export default function MyTasksScreen() {
         <View className="p-6">
           {loading ? (
             <View className="items-center justify-center py-12">
-              <Text className="text-gray-500">Loading history...</Text>
+              <ActivityIndicator size="large" color="#F97316" />
+              <Text className="text-gray-500 mt-4">Loading history...</Text>
             </View>
           ) : filteredHistory.length > 0 ? (
             filteredHistory.map((item) => (
@@ -175,6 +176,7 @@ export default function MyTasksScreen() {
                   pathname: '/root/(tabs)/volunteer/history_details',
                   params: { id: item.id }
                 })}
+                activeOpacity={0.8}
                 className="bg-white rounded-xl shadow-sm mb-4 overflow-hidden border border-gray-100"
               >
                 <View className="flex-row">
@@ -198,8 +200,8 @@ export default function MyTasksScreen() {
                       <Text className="text-gray-900 font-rubik-bold mb-1 flex-1 mr-2">
                         {item.title || 'No title specified'}
                       </Text>
-                      <View className={`bg-${item.status === 'completed' ? 'green' : 'red'}-100 px-2 py-1 rounded-full`}>
-                        <Text className={`text-${item.status === 'completed' ? 'green' : 'red'}-600 text-xs font-rubik-medium capitalize`}>
+                      <View className={`bg-${item.status === 'completed' ? 'green' : 'orange'}-100 px-2 py-1 rounded-full`}>
+                        <Text className={`text-${item.status === 'completed' ? 'green' : 'orange'}-600 text-xs font-rubik-medium capitalize`}>
                           {item.status}
                         </Text>
                       </View>
@@ -233,62 +235,6 @@ export default function MyTasksScreen() {
           )}
         </View>
       </ScrollView>
-
-      {/* Bottom Navigation */}
-      <View className="flex-row justify-between items-center bg-white py-3 px-6 border-t border-gray-200 shadow-lg">
-        <Link href="./voldesh" asChild>
-          <TouchableOpacity className="items-center flex-1">
-            <View className="relative">
-              <FontAwesome5 name="home" size={24} color="#6B7280" />
-            </View>
-            <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Home</Text>
-          </TouchableOpacity>
-        </Link>
-
-        <Link href="./news" asChild>
-          <TouchableOpacity
-            className="items-center flex-1"
-            style={{ transform: [{ scale: 1 }] }}
-          >
-            <FontAwesome5 name="newspaper" size={24} color="#6B7280" />
-            <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">News</Text>
-          </TouchableOpacity>
-        </Link>
-
-        <Link href="./available-tasks" asChild>
-          <TouchableOpacity className="items-center flex-1">
-            <View className="bg-orange-500 p-3 rounded-full -mt-8 border-4 border-white shadow-xl">
-              <FontAwesome5 name="plus" size={24} color="white" />
-            </View>
-            <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Tasks</Text>
-          </TouchableOpacity>
-        </Link>
-
-        <Link href="./my-tasks" asChild>
-          <TouchableOpacity
-            className="items-center flex-1"
-            style={{ transform: [{ scale: 1 }] }}
-          >
-            <View className="relative">
-              <FontAwesome5 name="history" size={24} color="#F97316" />
-              <View className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full items-center justify-center">
-                <Text className="text-white text-xs font-bold">{history.length}</Text>
-              </View>
-            </View>
-            <Text className="text-orange-500 text-xs mt-1 font-rubik-medium">History</Text>
-          </TouchableOpacity>
-        </Link>
-
-        <Link href="./vol_pro" asChild>
-          <TouchableOpacity
-            className="items-center flex-1"
-            activeOpacity={0.7}
-          >
-            <FontAwesome5 name="user-circle" size={24} color="#6B7280" />
-            <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Profile</Text>
-          </TouchableOpacity>
-        </Link>
-      </View>
     </View>
   );
 }

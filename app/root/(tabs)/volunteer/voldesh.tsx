@@ -96,10 +96,10 @@ export default function VolunteerHome() {
 
   const [welcomeQuote, setWelcomeQuote] = useState('Thank you for making a difference today!');
   const [volunteerStats, setVolunteerStats] = useState({
-    totalHours: '0',
-    eventsJoined: '0',
-    donationsHandled: '0',
-    points: '0',
+    deliveries: 0,
+    communities: 0,
+    points: 0,
+    hours: 0,
   });
 
   // News state for recent events & stories
@@ -123,7 +123,7 @@ export default function VolunteerHome() {
         // Query Supabase using the email
         const { data, error } = await supabase
           .from('volunteer')
-          .select('name, image_url') // Only fetch name and image_url
+          .select('id, name, image_url, associated_communities, point')
           .eq('email', email) // Use the email from AsyncStorage
           .single();
 
@@ -137,6 +137,37 @@ export default function VolunteerHome() {
           name: data.name,
           image_url: data.image_url || require('@/assets/images/hasi.jpg'), // Fallback to default image
         }));
+
+        // Fetch deliveries (count of donations for this volunteer)
+        const { count: deliveriesCount, error: deliveriesError } = await supabase
+          .from('donation')
+          .select('id', { count: 'exact', head: true })
+          .eq('volunteer_id', data.id);
+        if (deliveriesError) throw deliveriesError;
+
+        // Communities: length of associated_communities array
+        let communitiesCount = 0;
+        if (data.associated_communities) {
+          try {
+            const arr = typeof data.associated_communities === 'string' ? JSON.parse(data.associated_communities) : data.associated_communities;
+            communitiesCount = Array.isArray(arr) ? arr.length : 0;
+          } catch {
+            communitiesCount = 0;
+          }
+        }
+
+        // Point
+        const points = data.point || 0;
+
+        // Hours = deliveries * 2
+        const hours = (deliveriesCount || 0) * 2;
+
+        setVolunteerStats({
+          deliveries: deliveriesCount || 0,
+          communities: communitiesCount,
+          points,
+          hours,
+        });
       } catch (error) {
         Alert.alert('Error', (error as Error).message);
       }
@@ -275,17 +306,17 @@ export default function VolunteerHome() {
           <View className="flex-row mt-4">
             <View className="flex-1 bg-white/10 rounded-xl p-3 mr-2">
               <Text className="text-white/80 text-sm">Deliveries</Text>
-              <Text className="text-white text-xl font-rubik-bold mt-1">{volunteer.stats.deliveries}</Text>
+              <Text className="text-white text-xl font-rubik-bold mt-1">{volunteerStats.deliveries}</Text>
             </View>
             <View className="flex-1 bg-white/10 rounded-xl p-3 mx-2">
               <Text className="text-white/80 text-sm">Communities</Text>
-              <Text className="text-white text-xl font-rubik-bold mt-1">{volunteer.stats.communities}</Text>
+              <Text className="text-white text-xl font-rubik-bold mt-1">{volunteerStats.communities}</Text>
             </View>
             <View className="flex-1 bg-white/10 rounded-xl p-3 ml-2">
-              <Text className="text-white/80 text-sm">Rating</Text>
+              <Text className="text-white/80 text-sm">Point</Text>
               <View className="flex-row items-center mt-1">
-                <Text className="text-white text-xl font-rubik-bold">{volunteer.stats.rating}</Text>
-                <MaterialIcons name="star" size={16} color="#FCD34D" className="ml-1" />
+                <Text className="text-white text-xl font-rubik-bold">{volunteerStats.points}</Text>
+                <MaterialIcons name="stars" size={16} color="#FCD34D" className="ml-1" />
               </View>
             </View>
           </View>
@@ -298,35 +329,26 @@ export default function VolunteerHome() {
             <View className="flex-row flex-wrap justify-between">
               <View className="w-[48%] mb-4">
                 <View className="flex-row items-center">
-                  <MaterialIcons name="schedule" size={20} color="#16A34A" />
-                  <Text className="text-gray-600 ml-2">Hours</Text>
+                  <MaterialIcons name="volunteer-activism" size={20} color="#F97316" />
+                  <Text className="text-gray-600 ml-2">Deliveries</Text>
                 </View>
                 <Text className="text-xl font-rubik-bold text-gray-800 mt-1">
-                  {volunteerStats.totalHours}
+                  {volunteerStats.deliveries}
                 </Text>
               </View>
               <View className="w-[48%] mb-4">
                 <View className="flex-row items-center">
-                  <MaterialIcons name="event" size={20} color="#2563EB" />
-                  <Text className="text-gray-600 ml-2">Events</Text>
+                  <MaterialIcons name="schedule" size={20} color="#16A34A" />
+                  <Text className="text-gray-600 ml-2">Hours</Text>
                 </View>
                 <Text className="text-xl font-rubik-bold text-gray-800 mt-1">
-                  {volunteerStats.eventsJoined}
-                </Text>
-              </View>
-              <View className="w-[48%]">
-                <View className="flex-row items-center">
-                  <MaterialIcons name="volunteer-activism" size={20} color="#F97316" />
-                  <Text className="text-gray-600 ml-2">Donations</Text>
-                </View>
-                <Text className="text-xl font-rubik-bold text-gray-800 mt-1">
-                  {volunteerStats.donationsHandled}
+                  {volunteerStats.hours}
                 </Text>
               </View>
               <View className="w-[48%]">
                 <View className="flex-row items-center">
                   <MaterialIcons name="stars" size={20} color="#9333EA" />
-                  <Text className="text-gray-600 ml-2">Points</Text>
+                  <Text className="text-gray-600 ml-2">Point</Text>
                 </View>
                 <Text className="text-xl font-rubik-bold text-gray-800 mt-1">
                   {volunteerStats.points}
@@ -509,63 +531,6 @@ export default function VolunteerHome() {
           </View>
         </View>
       </ScrollView>
-
-      {/* Bottom Navigation */}
-      <View className="flex-row justify-between items-center bg-white py-3 px-6 border-t border-gray-200 shadow-lg">
-        <Link href="./vol_home" asChild>
-          <TouchableOpacity className="items-center flex-1">
-            <View className="relative">
-              <FontAwesome5 name="home" size={24} color="#F97316" />
-              <View className="absolute -top-1 -right-1 w-2 h-2 bg-orange-500 rounded-full" />
-            </View>
-            <Text className="text-orange-500 text-xs mt-1 font-rubik-medium">Home</Text>
-          </TouchableOpacity>
-        </Link>
-
-        <Link href="./news" asChild>
-          <TouchableOpacity
-            className="items-center flex-1"
-            style={{ transform: [{ scale: 1 }] }}
-          >
-            <FontAwesome5 name="newspaper" size={24} color="#6B7280" />
-            <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">News</Text>
-          </TouchableOpacity>
-        </Link>
-
-        <Link href="./ongoing-donation" asChild>
-          <TouchableOpacity className="items-center flex-1">
-            <View className="bg-orange-500 p-3 rounded-full -mt-8 border-4 border-white shadow-xl">
-              <FontAwesome5 name="plus" size={24} color="white" />
-            </View>
-            <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Tasks</Text>
-          </TouchableOpacity>
-        </Link>
-
-        <Link href="./history" asChild>
-          <TouchableOpacity
-            className="items-center flex-1"
-            style={{ transform: [{ scale: 1 }] }}
-          >
-            <View className="relative">
-              <FontAwesome5 name="history" size={24} color="#6B7280" />
-              <View className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full items-center justify-center">
-                <Text className="text-white text-xs font-bold">3</Text>
-              </View>
-            </View>
-            <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">History</Text>
-          </TouchableOpacity>
-        </Link>
-
-        <Link href="./vol_pro" asChild>
-          <TouchableOpacity
-            className="items-center flex-1"
-            activeOpacity={0.7}
-          >
-            <FontAwesome5 name="user-circle" size={24} color="#6B7280" />
-            <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Profile</Text>
-          </TouchableOpacity>
-        </Link>
-      </View>
     </View>
   );
 }

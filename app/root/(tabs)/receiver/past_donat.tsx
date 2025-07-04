@@ -4,7 +4,6 @@ import { MaterialIcons, FontAwesome, Ionicons } from "@expo/vector-icons";
 import { Link } from "expo-router";
 import { supabase } from '../../../../constants/supabaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import BottomNavigation from "./BottomNavigation";
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -199,9 +198,6 @@ export default function PastDonations() {
           })}
         </ScrollView>
       )}
-
-      {/* Bottom Navigation */}
-      <BottomNavigation currentPage="past_donat" />
 
       {/* Image Viewer Modal */}
       {selectedImages && (

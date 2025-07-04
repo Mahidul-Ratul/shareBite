@@ -4,7 +4,6 @@ import { Link, useRouter } from "expo-router";
 import { FontAwesome, MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../../../constants/supabaseConfig";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import BottomNavigation from "./BottomNavigation";
 
 import axios from "axios";
 
@@ -338,8 +337,6 @@ export default function NGOHomePage() {
 
         
       </ScrollView>
-      {/* Bottom Navigation */}
-      <BottomNavigation currentPage="dashboard" />
     </View>
   );
 }

@@ -107,8 +107,8 @@ export default function SignUpScreen() {
         console.log("Database Insert Error:", insertError.message);
         throw insertError;
       }
-      Alert.alert("Success", "Sign-up successful! Please check your email.");
-      router.push(".././login");
+      Alert.alert("Success", "Sign-up successful! Please log in.");
+      router.push("../login");
     } catch (error) {
       console.log("Sign-Up Error:", error);
       Alert.alert("Error", error instanceof Error ? error.message : "An unknown error occurred");

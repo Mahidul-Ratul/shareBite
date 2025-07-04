@@ -5,7 +5,7 @@ import { supabase } from '../../../constants/supabaseConfig';
 import { MaterialIcons } from '@expo/vector-icons';
 
 const NewsDetails = () => {
-  const { news_id } = useLocalSearchParams();
+  const { news_id, from } = useLocalSearchParams();
   const [news, setNews] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -28,7 +28,15 @@ const NewsDetails = () => {
   return (
     <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', padding: 18, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#f1f5f9' }}>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 12 }}>
+        <TouchableOpacity onPress={() => {
+          if (from === 'volunteer') {
+            router.replace('/root/(tabs)/volunteer/All_News');
+          } else if (from === 'receiver') {
+            router.replace('/root/(tabs)/receiver/All_News');
+          } else {
+            router.back();
+          }
+        }} style={{ marginRight: 12 }}>
           <MaterialIcons name="arrow-back" size={26} color="#22223b" />
         </TouchableOpacity>
         <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#22223b' }}>News Details</Text>

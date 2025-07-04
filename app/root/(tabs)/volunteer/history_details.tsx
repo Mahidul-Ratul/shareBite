@@ -283,7 +283,7 @@ export default function HistoryDetailsScreen() {
             <View className="flex-row items-center mb-2">
               <MaterialIcons name="schedule" size={16} color="#6B7280" />
               <Text className="text-gray-600 ml-2">
-                {details.meals > 0 ? `${details.meals} meals` : details.type && details.type !== 'Not specified' ? details.type : 'Not specified'}
+                {details.meals > 0 ? `${details.meals} meals` : 'Not specified'}
               </Text>
             </View>
           </View>

@@ -299,8 +299,8 @@ const OrganizationSignUp = () => {
     
         if (volunteerError) throw volunteerError;
     
-        Alert.alert('Success', 'Registration submitted for approval');
-        router.push('./dashboard');
+        Alert.alert('Success', 'Registration successful! Please log in.');
+        router.push('../login');
       } catch (error) {
         Alert.alert('Error', (error as any).message);
       } finally {

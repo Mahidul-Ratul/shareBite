@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity, TextInput } from "react-native";
 import { Link, useRouter } from "expo-router";
 import { FontAwesome, MaterialIcons, Ionicons } from "@expo/vector-icons";
-import BottomNavigation from "./BottomNavigation";
 
 export default function DonationRequest() {
   const router = useRouter();
@@ -104,9 +103,6 @@ export default function DonationRequest() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-
-      {/* Bottom Navigation */}
-      <BottomNavigation currentPage="request" />
     </View>
   );
 }

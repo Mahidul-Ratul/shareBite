@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Image, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Dimensions } from 'react-native';
 import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import { supabase } from '../../../../constants/supabaseConfig';
-import BottomNavigation from "./BottomNavigation";
 
 const { width } = Dimensions.get('window');
 
@@ -153,7 +152,6 @@ export default function ReceiverProfile() {
           </View>
         </View>
       </ScrollView>
-      <BottomNavigation currentPage="profile" />
     </View>
   );
 }

@@ -193,8 +193,8 @@ const OrganizationSignUp = () => {
         const { error: receiverError } = await supabase.from('receiver').insert([receiverData]);
 
         if (receiverError) throw receiverError;
-        Alert.alert('Success', 'Registration submitted for approval');
-        router.push('./dashboard');
+        Alert.alert('Success', 'Registration submitted for approval! Please log in.');
+        router.push('../login');
       } catch (error) {
         Alert.alert('Error', (error as any).message);
       }

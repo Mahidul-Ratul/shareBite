@@ -2,7 +2,6 @@ import React from "react";
 import { View, Text, ScrollView, TouchableOpacity } from "react-native";
 import { MaterialIcons, FontAwesome, Ionicons } from "@expo/vector-icons";
 import { Link } from "expo-router";
-import BottomNavigation from "./BottomNavigation";
 
 export default function SettingsScreen() {
   return (
@@ -55,9 +54,6 @@ export default function SettingsScreen() {
           </View>
         </View>
       </ScrollView>
-
-      {/* Bottom Navigation */}
-      <BottomNavigation currentPage="settings" />
     </View>
   );
 }
