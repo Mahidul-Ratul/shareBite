@@ -358,52 +358,7 @@ const DonorDashboard = () => {
               </View>
       </ScrollView>
       
-      {/* Bottom Navigation */}
-      <View className="flex-row justify-between items-center bg-white py-3 px-6 border-t border-gray-200">
-  <Link href="./desh" asChild>
-    <TouchableOpacity className="items-center flex-1">
-      <FontAwesome5 name="home" size={24} color="#F97316" />
-      <Text className="text-orange-500 text-xs mt-1 font-rubik-medium">Home</Text>
-    </TouchableOpacity>
-  </Link>
 
-  <Link href="./news" asChild>
-    <TouchableOpacity className="items-center flex-1">
-      <FontAwesome5 name="newspaper" size={24} color="#6B7280" />
-      <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">News</Text>
-    </TouchableOpacity>
-  </Link>
-
-  
-
-  <Link href="./donate" asChild>
-    <TouchableOpacity className="items-center flex-1">
-      <View className="bg-orange-500 p-3 rounded-full -mt-8 border-4 border-white shadow-lg">
-        <FontAwesome5 name="plus" size={24} color="white" />
-      </View>
-      <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Donate</Text>
-    </TouchableOpacity>
-  </Link>
-
-  <Link href="./d_history" asChild>
-    <TouchableOpacity className="items-center flex-1">
-      <FontAwesome5 name="history" size={24} color="#6B7280" />
-      <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">My Donations</Text>
-    </TouchableOpacity>
-  </Link>
-  <Link href="./notification" asChild>
-    <TouchableOpacity className="items-center flex-1">
-      <View className="relative">
-        <Ionicons name="notifications-outline" size={24} color="#6B7280" />
-        <View className="absolute -top-1 -right-1 bg-orange-500 w-4 h-4 rounded-full items-center justify-center">
-          <Text className="text-white text-xs font-rubik-bold">2</Text>
-        </View>
-      </View>
-      <Text className="text-gray-600 text-xs mt-1 font-rubik-medium">Notifications</Text>
-    </TouchableOpacity>
-  </Link>
-  
-</View>
     </View>
   );
 };

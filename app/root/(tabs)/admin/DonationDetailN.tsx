@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Image, Text, TouchableOpacity, Alert, Dimensions, Pressable, Modal } from 'react-native';
+import { View, ScrollView, Image, Text, TouchableOpacity, Alert, Dimensions, Pressable, Modal, Linking, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -17,6 +17,8 @@ const DonationDetail = () => {
   const [volunteers, setVolunteers] = useState<any[]>([]);
   const [selectedVolunteer, setSelectedVolunteer] = useState<any>(null);
   const [receiver, setReceiver] = useState<any>(null);
+  const [donorData, setDonorData] = useState<any>(null);
+  const [contactPersonData, setContactPersonData] = useState<any>(null);
   const [images, setImages] = useState<string[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
   const [selectedVolunteers, setSelectedVolunteers] = useState<any[]>([]);
@@ -89,6 +91,27 @@ const DonationDetail = () => {
     }
   };
 
+  // Phone call functionality
+  const handlePhoneCall = async (phoneNumber: string) => {
+    if (!phoneNumber) {
+      Alert.alert('Error', 'No phone number available');
+      return;
+    }
+    
+    try {
+      const url = `tel:${phoneNumber}`;
+      const supported = await Linking.canOpenURL(url);
+      
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert('Error', 'Phone calls are not supported on this device');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to make phone call');
+    }
+  };
+
   // Fetch donation data when the component mounts
   useEffect(() => {
     const fetchDonationData = async () => {
@@ -113,14 +136,32 @@ const DonationDetail = () => {
         }
         // Fetch donor info
         if (data?.donor_id) {
-          const { data: donorData, error: donorError } = await supabase
-            .from('users')
-            .select('name, phone, email')
-            .eq('id', data.donor_id)
-            .maybeSingle();
-          if (!donorError && donorData) {
-            setDonation((prev: any) => ({ ...prev, donorInfo: donorData }));
+          try {
+            const { data: donorInfo, error: donorError } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', data.donor_id)
+              .single();
+            if (!donorError && donorInfo) {
+              console.log('Donor data fetched:', donorInfo);
+              setDonorData(donorInfo);
+            } else {
+              console.log('Donor fetch error:', donorError);
+            }
+          } catch (err) {
+            console.log('Donor fetch exception:', err);
           }
+        }
+
+        // Set contact person data from donation
+        if (data) {
+          const contactData = {
+            name: data.Name || null,
+            contact: data.Contact || null,
+            location: data.Location || null
+          };
+          console.log('Contact person data:', contactData);
+          setContactPersonData(contactData);
         }
         // Set images if available
         if (data?.images && Array.isArray(data.images)) {
@@ -280,6 +321,8 @@ const DonationDetail = () => {
 
   // Helper to get status display info
   const getStatusBanner = () => {
+    if (!donation?.status) return null;
+    
     switch (donation.status) {
       case 'pending':
         return {
@@ -341,6 +384,14 @@ const DonationDetail = () => {
           bg: 'bg-red-50',
           textColor: 'text-red-800',
         };
+      case 'rejectedF':
+        return {
+          color: '#ef4444',
+          icon: 'close',
+          text: 'Receiver Rejected',
+          bg: 'bg-red-50',
+          textColor: 'text-red-800',
+        };
       case 'volunteer is assigned':
         return {
           color: '#3b82f6',
@@ -378,6 +429,14 @@ const DonationDetail = () => {
           color: '#16a34a',
           icon: 'check-circle',
           text: 'Food Delivered To Receiver',
+          bg: 'bg-green-50',
+          textColor: 'text-green-800',
+        };
+      case 'receiver confirmed':
+        return {
+          color: '#16a34a',
+          icon: 'check-circle',
+          text: 'Receiver Confirmed',
           bg: 'bg-green-50',
           textColor: 'text-green-800',
         };
@@ -451,23 +510,19 @@ const DonationDetail = () => {
         </View>
 
         <View className="px-6 pt-6">
-          <Text className="text-2xl font-bold text-gray-900">{donation?.Name}</Text>
-          <View className="flex-row items-center mt-2">
-            <MaterialIcons name="location-on" size={20} color="#6366f1" />
-            <Text className="text-gray-600 ml-2">{donation?.location}</Text>
-          </View>
-
           {/* Preferred NGO Section */}
-          <View className="mt-6 bg-blue-50 rounded-xl p-4">
-            <Text className="text-lg font-bold text-gray-900 mb-2">Preferred NGO</Text>
-            <View className="flex-row items-center">
-              <MaterialIcons name="business" size={24} color="#6366f1" />
-              <View className="ml-3">
-                <Text className="text-gray-900 font-medium">{receiver?.name}</Text>
-                <Text className="text-gray-600 text-sm mt-1">{receiver?.areas}</Text>
+          {receiver && (
+            <View className="mt-6 bg-blue-50 rounded-xl p-4">
+              <Text className="text-lg font-bold text-gray-900 mb-2">Preferred NGO</Text>
+              <View className="flex-row items-center">
+                <MaterialIcons name="business" size={24} color="#6366f1" />
+                <View className="ml-3">
+                  <Text className="text-gray-900 font-medium">{receiver?.name || 'N/A'}</Text>
+                  <Text className="text-gray-600 text-sm mt-1">{receiver?.areas || 'N/A'}</Text>
+                </View>
               </View>
             </View>
-          </View>
+          )}
 
           <View className="mt-8">
             <Text className="text-lg font-bold text-gray-900 mb-4">Donation Details</Text>
@@ -475,59 +530,205 @@ const DonationDetail = () => {
               <View className="bg-indigo-50 rounded-xl p-4 flex-1 mr-4">
                 <MaterialIcons name="category" size={24} color="#6366f1" />
                 <Text className="text-gray-600 text-sm mt-2">Type</Text>
-                <Text className="text-gray-900 font-bold mt-1">{donation?.Types}</Text>
+                <Text className="text-gray-900 font-bold mt-1">{donation?.Types || 'N/A'}</Text>
               </View>
               <View className="bg-indigo-50 rounded-xl p-4 flex-1">
                 <MaterialIcons name="inventory" size={24} color="#6366f1" />
                 <Text className="text-gray-600 text-sm mt-2">Quantity</Text>
-                <Text className="text-gray-900 font-bold mt-1">{donation?.Quantity}</Text>
+                <Text className="text-gray-900 font-bold mt-1">{donation?.Quantity || 'N/A'}</Text>
               </View>
             </View>
 
             <View className="mt-6">
               <Text className="text-lg font-bold text-gray-900 mb-3">Description</Text>
-              <Text className="text-gray-600 leading-6">{donation?.Details}</Text>
+              <Text className="text-gray-600 leading-6">{donation?.Details || 'No description available'}</Text>
             </View>
 
-            <View className="mt-6">
-              <Text className="text-lg font-bold text-gray-900 mb-3">Time Details</Text>
-              <View className="bg-gray-50 rounded-xl p-4">
-                <View className="flex-row items-center mb-4">
-                  <MaterialIcons name="access-time" size={20} color="#6366f1" />
-                  <View className="ml-3">
-                    <Text className="text-gray-600 text-sm">Producing Time</Text>
-                    <Text className="text-gray-900 font-medium mt-1">
-                      {new Date(donation?.Producing as string).toLocaleString()}
-                    </Text>
+            {donation?.Producing || donation?.Lasting ? (
+              <View className="mt-6">
+                <Text className="text-lg font-bold text-gray-900 mb-3">Time Details</Text>
+                <View className="bg-gray-50 rounded-xl p-4">
+                  {donation?.Producing && (
+                    <View className="flex-row items-center mb-4">
+                      <MaterialIcons name="access-time" size={20} color="#6366f1" />
+                      <View className="ml-3">
+                        <Text className="text-gray-600 text-sm">Producing Time</Text>
+                        <Text className="text-gray-900 font-medium mt-1">
+                          {(() => {
+                            try {
+                              return new Date(donation.Producing).toLocaleString();
+                            } catch (error) {
+                              return donation.Producing || 'Invalid date';
+                            }
+                          })()}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                  {donation?.Lasting && (
+                    <View className="flex-row items-center">
+                      <MaterialIcons name="timer" size={20} color="#6366f1" />
+                      <View className="ml-3">
+                        <Text className="text-gray-600 text-sm">Lasting Until</Text>
+                        <Text className="text-gray-900 font-medium mt-1">
+                          {(() => {
+                            try {
+                              return new Date(donation.Lasting).toLocaleString();
+                            } catch (error) {
+                              return donation.Lasting || 'Invalid date';
+                            }
+                          })()}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Donor Information */}
+          {donorData && (
+            <View className="mt-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 shadow-lg border border-blue-100">
+              <View className="flex-row justify-between items-center mb-4">
+                <Text className="text-lg font-bold text-gray-900">Donor Information</Text>
+                <TouchableOpacity onPress={() => handlePhoneCall(donorData?.phoneNumber || donorData?.phone || '')}>
+                  <MaterialIcons name="phone" size={28} color="#6366f1" />
+                </TouchableOpacity>
+              </View>
+              <View className="space-y-3">
+                <View className="flex-row items-center">
+                  <View className="bg-blue-100 rounded-full p-2 mr-3">
+                    <MaterialIcons name="person" size={20} color="#6366f1" />
                   </View>
+                  <View className="flex-1">
+                    <Text className="text-gray-900 font-semibold">{donorData?.fullName || donorData?.name || 'No name available'}</Text>
+                    {(donorData?.address || donorData?.location) && (
+                      <Text className="text-gray-600 text-sm mt-1">{donorData?.address || donorData?.location}</Text>
+                    )}
+                  </View>
+                </View>
+                <TouchableOpacity 
+                  className="flex-row items-center"
+                  onPress={() => handlePhoneCall(donorData?.phoneNumber || donorData?.phone || '')}
+                >
+                  <View className="bg-blue-100 rounded-full p-2 mr-3">
+                    <MaterialIcons name="phone" size={20} color="#6366f1" />
+                  </View>
+                  <Text className="text-blue-600 font-medium">
+                    {donorData?.phoneNumber || donorData?.phone || 'No phone number available'}
+                  </Text>
+                </TouchableOpacity>
+                <View className="flex-row items-center">
+                  <View className="bg-blue-100 rounded-full p-2 mr-3">
+                    <MaterialIcons name="email" size={20} color="#6366f1" />
+                  </View>
+                  <Text className="text-gray-600">
+                    {donorData?.email || 'No email available'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Contact Person Information */}
+          {contactPersonData && (contactPersonData.name || contactPersonData.contact) && (
+            <View className="mt-6 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-6 shadow-lg border border-purple-100">
+              <View className="flex-row justify-between items-center mb-4">
+                <Text className="text-lg font-bold text-gray-900">Contact Person</Text>
+                <TouchableOpacity onPress={() => handlePhoneCall(contactPersonData?.contact || '')}>
+                  <MaterialIcons name="phone" size={28} color="#9333ea" />
+                </TouchableOpacity>
+              </View>
+              <View className="space-y-3">
+                <View className="flex-row items-center">
+                  <View className="bg-purple-100 rounded-full p-2 mr-3">
+                    <MaterialIcons name="person" size={20} color="#9333ea" />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-gray-900 font-semibold">{contactPersonData?.name || 'No name available'}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity 
+                  className="flex-row items-center"
+                  onPress={() => handlePhoneCall(contactPersonData?.contact || '')}
+                >
+                  <View className="bg-purple-100 rounded-full p-2 mr-3">
+                    <MaterialIcons name="phone" size={20} color="#9333ea" />
+                  </View>
+                  <Text className="text-purple-600 font-medium">
+                    {contactPersonData?.contact || 'No phone number available'}
+                  </Text>
+                </TouchableOpacity>
+                <View className="flex-row items-center">
+                  <View className="bg-purple-100 rounded-full p-2 mr-3">
+                    <MaterialIcons name="location-on" size={20} color="#9333ea" />
+                  </View>
+                  <Text className="text-gray-600">
+                    {contactPersonData?.location || 'No location available'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Receiver Information */}
+          {receiver && (
+            <View className="mt-6 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 shadow-lg border border-green-100">
+              <View className="flex-row justify-between items-center mb-4">
+                <Text className="text-lg font-bold text-gray-900">Receiver Information</Text>
+                <TouchableOpacity onPress={() => handlePhoneCall(receiver?.phone || '')}>
+                  <MaterialIcons name="phone" size={28} color="#16a34a" />
+                </TouchableOpacity>
+              </View>
+              <View className="space-y-3">
+                <View className="flex-row items-center">
+                  <View className="bg-green-100 rounded-full p-2 mr-3">
+                    <MaterialIcons name="business" size={20} color="#16a34a" />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-gray-900 font-semibold">{receiver?.name || 'No name available'}</Text>
+                    <Text className="text-gray-600 text-sm mt-1">{receiver?.type || 'No type available'}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity 
+                  className="flex-row items-center"
+                  onPress={() => handlePhoneCall(receiver?.phone || '')}
+                >
+                  <View className="bg-green-100 rounded-full p-2 mr-3">
+                    <MaterialIcons name="phone" size={20} color="#16a34a" />
+                  </View>
+                  <Text className="text-green-600 font-medium">
+                    {receiver?.phone || 'No phone number available'}
+                  </Text>
+                </TouchableOpacity>
+                <View className="flex-row items-center">
+                  <View className="bg-green-100 rounded-full p-2 mr-3">
+                    <MaterialIcons name="email" size={20} color="#16a34a" />
+                  </View>
+                  <Text className="text-gray-600">
+                    {receiver?.email || 'No email available'}
+                  </Text>
                 </View>
                 <View className="flex-row items-center">
-                  <MaterialIcons name="timer" size={20} color="#6366f1" />
-                  <View className="ml-3">
-                    <Text className="text-gray-600 text-sm">Lasting Until</Text>
-                    <Text className="text-gray-900 font-medium mt-1">
-                      {new Date(donation?.Lasting as string).toLocaleString()}
-                    </Text>
+                  <View className="bg-green-100 rounded-full p-2 mr-3">
+                    <MaterialIcons name="location-on" size={20} color="#16a34a" />
                   </View>
+                  <Text className="text-gray-600">
+                    {receiver?.location || 'No location available'}
+                  </Text>
+                </View>
+                <View className="flex-row items-center">
+                  <View className="bg-green-100 rounded-full p-2 mr-3">
+                    <MaterialIcons name="groups" size={20} color="#16a34a" />
+                  </View>
+                  <Text className="text-gray-600">
+                    {receiver?.areas || 'No areas available'}
+                  </Text>
                 </View>
               </View>
             </View>
-          </View>
-
-          {/* Contact Information */}
-          <View className="mt-6 bg-gray-50 rounded-xl p-4">
-            <Text className="text-lg font-bold text-gray-900 mb-3">Donor Information</Text>
-            <View className="space-y-3">
-              <View className="flex-row items-center">
-                <MaterialIcons name="person" size={20} color="#6366f1" />
-                <Text className="text-gray-600 ml-3">{donation.Name}</Text>
-              </View>
-              <View className="flex-row items-center">
-                <MaterialIcons name="phone" size={20} color="#6366f1" />
-                <Text className="text-gray-600 ml-3">{donation?.donor_contact}</Text>
-              </View>
-            </View>
-          </View>
+          )}
 
           {/* Status Banner - only show if known status */}
           {statusBanner && (
@@ -540,15 +741,18 @@ const DonationDetail = () => {
           )}
 
           {/* Volunteer Information - show full info if available */}
-          {donation.volunteer_id && donation.volunteer_id !== 'ngo' && (
+          {donation?.volunteer_id && donation.volunteer_id !== 'ngo' && (
             <View className="mt-6 bg-gradient-to-r from-green-100 via-blue-100 to-purple-100 rounded-2xl p-6 shadow-lg border border-green-200">
-              <Text className="text-lg font-extrabold text-green-900 mb-3">Volunteer Information</Text>
-              <VolunteerInfoCard volunteerId={donation.volunteer_id} />
+              <View className="flex-row justify-between items-center mb-4">
+                <Text className="text-lg font-bold text-gray-900">Volunteer Information</Text>
+                <VolunteerPhoneButton volunteerId={donation.volunteer_id} />
+              </View>
+              <VolunteerInfoContent volunteerId={donation.volunteer_id} />
             </View>
           )}
 
           {/* Admin Actions - only show if pending */}
-          {donation.status === 'pending' && (
+          {donation?.status === 'pending' && (
             <View className="flex-row space-x-4 mt-8 mb-8">
               <TouchableOpacity
                 className="flex-1 bg-red-600 rounded-xl py-4"
@@ -575,7 +779,7 @@ const DonationDetail = () => {
           )}
 
           {/* Assignment Section - only show if approvedF */}
-          {donation.status === 'approvedF' && (
+          {donation?.status === 'approvedF' && (
             <View className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 mt-6">
               <View className="flex-row items-center">
                 <MaterialIcons name="hourglass-empty" size={24} color="#3b82f6" />
@@ -588,28 +792,77 @@ const DonationDetail = () => {
               <View className="mt-6">
                 <Text className="text-lg font-bold text-gray-900 mb-3">Donation Timeline</Text>
                 {[
-                  { key: 'pending', label: 'Donation Requested' },
-                  { key: 'approved', label: 'Donation Approved' },
-                  { key: 'approvedF', label: 'Waiting for Volunteer Assignment' },
-                  { key: 'volunteer is assigned', label: 'Volunteer Assigned' },
-                  { key: 'on the way to receive food', label: 'Volunteer On The Way' },
-                  { key: 'food collected', label: 'Food Collected' },
-                  { key: 'on the way to deliver food', label: 'On The Way To Receiver' },
-                  { key: 'delivered the food', label: 'Donation Delivered' },
+                  { key: 'pending', label: 'Donation Requested', description: 'Donor posted a new donation request.' },
+                  { key: 'approved', label: 'Donation Approved', description: 'Admin approved the donation request.' },
+                  { key: 'approvedF', label: 'Ready for Assignment', description: 'Donation is ready to be assigned to a volunteer or NGO.' },
+                  { key: 'receiver_acceptance', label: 'Receiver Decision', description: 'Receiver will accept or reject the donation offer.' },
+                  { key: 'volunteer is assigned', label: 'Volunteer Assigned', description: 'A volunteer has been assigned to collect the donation.' },
+                  { key: 'on the way to receive food', label: 'Volunteer On The Way', description: 'Volunteer is on the way to collect the donation.' },
+                  { key: 'food collected', label: 'Food Collected', description: 'The food has been collected by the volunteer.' },
+                  { key: 'on the way to deliver food', label: 'On The Way To Receiver', description: 'Volunteer is delivering the food to the receiver.' },
+                  { key: 'delivered the food', label: 'Donation Delivered', description: 'The donation has been delivered to the receiver.' },
+                  { key: 'receiver confirmed', label: 'Receiver Confirmed', description: 'The receiver confirmed receiving the food.' },
                 ].map((stage, idx, arr) => {
+                  // Handle receiver acceptance step
+                  if (stage.key === 'receiver_acceptance') {
+                    // Show this step when status is approvedF, rejectedF, or any status after approvedF
+                    const shouldShow = ['approvedF', 'rejectedF', 'volunteer is assigned', 'on the way to receive food', 'food collected', 'on the way to deliver food', 'delivered the food', 'receiver confirmed'].includes(donation.status);
+                    if (!shouldShow) return null;
+                    
+                    // Determine if this step is completed, current, or pending
+                    let isCompleted = false;
+                    let isCurrent = false;
+                    let customLabel = stage.label;
+                    let customDescription = stage.description;
+                    
+                    if (donation.status === 'rejectedF') {
+                      isCompleted = true;
+                      customLabel = 'Receiver Rejected';
+                      customDescription = 'Receiver rejected the donation offer.';
+                    } else if (['volunteer is assigned', 'on the way to receive food', 'food collected', 'on the way to deliver food', 'delivered the food', 'receiver confirmed'].includes(donation.status)) {
+                      isCompleted = true;
+                      customLabel = 'Receiver Accepted';
+                      customDescription = 'Receiver accepted the donation offer.';
+                    } else if (donation.status === 'approvedF') {
+                      isCurrent = true;
+                      customLabel = 'Receiver Decision';
+                      customDescription = 'Waiting for receiver to accept or reject the donation offer.';
+                    }
+                    
+                    return (
+                      <View key={stage.key} className="flex-row mb-4 last:mb-0 items-center">
+                        <View className="items-center mr-4">
+                          <View className={`w-4 h-4 rounded-full ${isCompleted ? 'bg-green-500' : isCurrent ? 'bg-blue-500' : 'bg-gray-300'} border-2 border-white shadow`} />
+                          {idx !== arr.length - 1 && (
+                            <View className={`w-0.5 h-8 ${isCompleted ? 'bg-green-200' : isCurrent ? 'bg-blue-200' : 'bg-gray-200'} my-1`} />
+                          )}
+                        </View>
+                        <View className="flex-1">
+                          <Text className={`font-medium text-base ${isCompleted ? 'text-green-700' : isCurrent ? 'text-blue-700' : 'text-gray-400'}`}>{customLabel}</Text>
+                          <Text className={`text-sm ${isCompleted ? 'text-green-600' : isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>{customDescription}</Text>
+                        </View>
+                      </View>
+                    );
+                  }
+                  
+                  // For all other stages, show them normally
                   const statusOrder = [
                     'pending',
                     'approved',
                     'approvedF',
+                    'receiver_acceptance',
                     'volunteer is assigned',
                     'on the way to receive food',
                     'food collected',
                     'on the way to deliver food',
                     'delivered the food',
+                    'receiver confirmed',
                   ];
                   const currentIdx = statusOrder.indexOf(donation.status);
-                  const isCompleted = idx < currentIdx;
-                  const isCurrent = idx === currentIdx;
+                  const stageIdx = statusOrder.indexOf(stage.key);
+                  const isCompleted = stageIdx < currentIdx;
+                  const isCurrent = stageIdx === currentIdx;
+                  
                   return (
                     <View key={stage.key} className="flex-row mb-4 last:mb-0 items-center">
                       <View className="items-center mr-4">
@@ -620,6 +873,7 @@ const DonationDetail = () => {
                       </View>
                       <View className="flex-1">
                         <Text className={`font-medium text-base ${isCompleted ? 'text-green-700' : isCurrent ? 'text-blue-700' : 'text-gray-400'}`}>{stage.label}</Text>
+                        <Text className={`text-sm ${isCompleted ? 'text-green-600' : isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>{stage.description}</Text>
                       </View>
                     </View>
                   );
@@ -629,7 +883,7 @@ const DonationDetail = () => {
           )}
 
           {/* Assignment Info - show if assigned */}
-          {donation.status === 'assigned' && (
+          {donation?.status === 'assigned' && (
             <View className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 mt-6">
               <View className="flex-row items-center">
                 <MaterialIcons name="assignment-ind" size={24} color="#3b82f6" />
@@ -652,7 +906,7 @@ const DonationDetail = () => {
           )}
 
           {/* Delivery Workflow Statuses */}
-          {[
+          {donation?.status && [
             'volunteer is assigned',
             'on the way to receive food',
             'food collected',
@@ -707,7 +961,7 @@ const DonationDetail = () => {
           )}
 
           {/* Completed, Cancelled, Rejected Info */}
-          {donation.status === 'completed' && (
+          {donation?.status === 'completed' && (
             <View className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6 mt-6">
               <View className="flex-row items-center">
                 <MaterialIcons name="check-circle" size={24} color="#16a34a" />
@@ -716,7 +970,7 @@ const DonationDetail = () => {
               <Text className="text-green-700 mt-2">This donation has been successfully delivered and completed.</Text>
             </View>
           )}
-          {donation.status === 'cancelled' && (
+          {donation?.status === 'cancelled' && (
             <View className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 mt-6">
               <View className="flex-row items-center">
                 <MaterialIcons name="cancel" size={24} color="#dc2626" />
@@ -725,13 +979,22 @@ const DonationDetail = () => {
               <Text className="text-red-700 mt-2">This donation has been cancelled.</Text>
             </View>
           )}
-          {donation.status === 'rejected' && (
+          {donation?.status === 'rejected' && (
             <View className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 mt-6">
               <View className="flex-row items-center">
                 <MaterialIcons name="cancel" size={24} color="#dc2626" />
                 <Text className="text-red-800 font-bold ml-2">Donation Rejected</Text>
               </View>
               <Text className="text-red-700 mt-2">This donation was rejected by the admin.</Text>
+            </View>
+          )}
+          {donation?.status === 'rejectedF' && (
+            <View className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 mt-6">
+              <View className="flex-row items-center">
+                <MaterialIcons name="close" size={24} color="#ef4444" />
+                <Text className="text-red-800 font-bold ml-2">Receiver Rejected</Text>
+              </View>
+              <Text className="text-red-700 mt-2">The receiver rejected this donation offer.</Text>
             </View>
           )}
         </View>
@@ -747,9 +1010,57 @@ export default DonationDetail;
 // When assigning to NGO, volunteer_id is set to 'ngo'.
 // Assignment options are only shown for status 'approvedF'.
 
-// Helper component to fetch and display volunteer info
-function VolunteerInfoCard({ volunteerId }: { volunteerId: string }) {
+// Helper component for volunteer phone button in header
+function VolunteerPhoneButton({ volunteerId }: { volunteerId: string }) {
   const [volunteer, setVolunteer] = React.useState<any>(null);
+  
+  const handlePhoneCall = async (phoneNumber: string) => {
+    if (!phoneNumber || phoneNumber === 'N/A') {
+      Alert.alert('Error', 'Phone number not available');
+      return;
+    }
+    
+    try {
+      const url = Platform.OS === 'ios' 
+        ? `telprompt:${phoneNumber}` 
+        : `tel:${phoneNumber}`;
+      
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert('Error', 'Phone calls are not supported on this device');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to make phone call');
+    }
+  };
+
+  React.useEffect(() => {
+    (async () => {
+      if (!volunteerId) return;
+      const { data, error } = await supabase
+        .from('volunteer')
+        .select('phone')
+        .eq('id', volunteerId)
+        .maybeSingle();
+      if (!error && data) setVolunteer(data);
+    })();
+  }, [volunteerId]);
+  
+  if (!volunteer) return null;
+  
+  return (
+    <TouchableOpacity onPress={() => handlePhoneCall(volunteer?.phone || '')}>
+      <MaterialIcons name="phone" size={28} color="#16a34a" />
+    </TouchableOpacity>
+  );
+}
+
+// Helper component to display volunteer info content
+function VolunteerInfoContent({ volunteerId }: { volunteerId: string }) {
+  const [volunteer, setVolunteer] = React.useState<any>(null);
+
   React.useEffect(() => {
     (async () => {
       if (!volunteerId) return;
@@ -761,20 +1072,30 @@ function VolunteerInfoCard({ volunteerId }: { volunteerId: string }) {
       if (!error && data) setVolunteer(data);
     })();
   }, [volunteerId]);
+  
   if (!volunteer) return <Text className="text-gray-500">Loading volunteer info...</Text>;
+  
   return (
     <View className="space-y-3">
       <View className="flex-row items-center">
-        <MaterialIcons name="person" size={22} color="#16a34a" />
-        <Text className="text-gray-800 ml-3 text-base font-semibold">{volunteer.name || 'N/A'}</Text>
+        <View className="bg-green-100 rounded-full p-2 mr-3">
+          <MaterialIcons name="person" size={20} color="#16a34a" />
+        </View>
+        <View className="flex-1">
+          <Text className="text-gray-900 font-semibold">{volunteer?.name || 'No name available'}</Text>
+        </View>
       </View>
       <View className="flex-row items-center">
-        <MaterialIcons name="phone" size={22} color="#16a34a" />
-        <Text className="text-gray-700 ml-3 text-base">{volunteer.phone || 'N/A'}</Text>
+        <View className="bg-green-100 rounded-full p-2 mr-3">
+          <MaterialIcons name="phone" size={20} color="#16a34a" />
+        </View>
+        <Text className="text-gray-700 text-base">{volunteer?.phone || 'N/A'}</Text>
       </View>
       <View className="flex-row items-center">
-        <MaterialIcons name="email" size={22} color="#16a34a" />
-        <Text className="text-gray-700 ml-3 text-base">{volunteer.email || 'N/A'}</Text>
+        <View className="bg-green-100 rounded-full p-2 mr-3">
+          <MaterialIcons name="email" size={20} color="#16a34a" />
+        </View>
+        <Text className="text-gray-700 text-base">{volunteer?.email || 'N/A'}</Text>
       </View>
     </View>
   );

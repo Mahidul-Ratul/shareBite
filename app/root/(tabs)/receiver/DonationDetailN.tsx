@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Image, Text, TouchableOpacity, Alert, Dimensions, ActivityIndicator } from 'react-native';
+import { View, ScrollView, Image, Text, TouchableOpacity, Alert, Dimensions, ActivityIndicator, Linking } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -7,18 +7,21 @@ import { supabase } from '../../../../constants/supabaseConfig';
 
 const { width } = Dimensions.get('window');
 
-// Timeline stages for donation progress
+// Timeline stages for donation progress - updated to match donor's timeline
 const STATUS_STAGES = [
-  { key: 'pending', label: 'Donation Requested', description: 'You requested this donation.' },
-  { key: 'approved', label: 'Donation Approved', description: 'Admin approved your donation request.' },
+  { key: 'pending', label: 'Donation Requested', description: 'Donor posted a new donation request.' },
+  { key: 'approved', label: 'Donation Approved', description: 'Admin approved the donation request.' },
+  { key: 'receiver_acceptance', label: 'Your Decision', description: 'You need to accept or reject the donation offer.' },
   { key: 'approvedF', label: 'Ready for Assignment', description: 'Donation is ready to be assigned to a volunteer.' },
   { key: 'volunteer is assigned', label: 'Volunteer Assigned', description: 'A volunteer has been assigned to collect the donation.' },
   { key: 'on the way to receive food', label: 'Volunteer On The Way', description: 'Volunteer is on the way to collect the donation.' },
   { key: 'food collected', label: 'Food Collected', description: 'The food has been collected by the volunteer.' },
-  { key: 'on the way to deliver food', label: 'On The Way To Receiver', description: 'Volunteer is delivering the food to the receiver.' },
-  { key: 'delivered the food', label: 'Donation Delivered', description: 'The donation has been delivered.' },
-  { key: 'receiver confirmed', label: 'Receiver Confirmed', description: 'You have confirmed receiving the food.' },
-  { key: 'receiver denied', label: 'Receiver Denied', description: 'You denied receiving the food.' },
+  { key: 'on the way to deliver food', label: 'On The Way To You', description: 'Volunteer is delivering the food to you.' },
+  { key: 'delivered the food', label: 'Donation Delivered', description: 'The donation has been delivered to you.' },
+  { key: 'receiver confirmed', label: 'You Confirmed', description: 'You have confirmed receiving the food.' },
+  { key: 'rejectedF', label: 'You Rejected', description: 'You rejected the donation offer.' },
+  { key: 'cancelled', label: 'Donation Cancelled', description: 'The donation has been cancelled by the donor.' },
+  { key: 'pending_other_ngo', label: 'Offered to Other NGOs', description: 'Donation has been offered to nearby NGOs.' },
 ];
 
 // Add this helper function before DonationDetail
@@ -87,6 +90,7 @@ const DonationDetail = () => {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const [userData, setUserData] = useState<any>(null);
+  const [volunteerData, setVolunteerData] = useState<any>(null);
   const [images, setImages] = useState<string[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
 
@@ -111,6 +115,16 @@ const DonationDetail = () => {
             .eq('id', data.donor_id)
             .single();
           if (!userError) setUserData(userData);
+        }
+        
+        // Fetch volunteer information if volunteer is assigned
+        if (data?.volunteer_id) {
+          const { data: volunteerData, error: volunteerError } = await supabase
+            .from('volunteer')
+            .select('*')
+            .eq('id', data.volunteer_id)
+            .single();
+          if (!volunteerError) setVolunteerData(volunteerData);
         }
       } catch (error) {
         Alert.alert('Error', 'Failed to load donation details');
@@ -139,10 +153,43 @@ const DonationDetail = () => {
             for: 'admin',
             donation_id: donation.id,
             created_at: new Date().toISOString(),
+            ngo_id: donation.ngo_id,
+            status: 'approvedF',
           },
         ]);
         // Notify nearby volunteers
         await notifyNearbyVolunteers(donation);
+      } else if (status === 'rejectedF') {
+        // Send notifications to admin and donor when receiver rejects
+        const notifications = [];
+        // Notify admin
+        notifications.push({
+          title: 'Donation Rejected by Receiver',
+          message: `The receiver has rejected the donation: ${donation.Types} - ${donation.Quantity}`,
+          type: 'rejected',
+          isread: false,
+          for: 'admin',
+          donation_id: donation.id,
+          created_at: new Date().toISOString(),
+          ngo_id: donation.ngo_id,
+          status: 'rejectedF',
+        });
+        // Notify donor
+        if (donation.donor_id) {
+          notifications.push({
+            title: 'Donation Rejected',
+            message: `Your donation (${donation.Types} - ${donation.Quantity}) has been rejected by the receiver.`,
+            type: 'rejected',
+            isread: false,
+            for: 'donor',
+            donation_id: donation.id,
+            created_at: new Date().toISOString(),
+            donor_id: donation.donor_id,
+            ngo_id: donation.ngo_id,
+            status: 'rejectedF',
+          });
+        }
+        await supabase.from('notifications').insert(notifications);
       }
       Alert.alert('Success', `Donation has been ${status === 'approvedF' ? 'accepted' : 'rejected'}`, [
         { text: 'OK', onPress: () => router.back() },
@@ -178,11 +225,13 @@ const DonationDetail = () => {
   // Find the current status index
   const currentStatusIndex = STATUS_STAGES.findIndex(s => s.key === donation?.status);
 
-  // Status banner design
+  // Status banner design - updated to match donor's implementation
   const getStatusBanner = () => {
     if (!donation?.status) return null;
     const statusObj = STATUS_STAGES.find(s => s.key === donation.status);
     let color = '#fbbf24', bg = 'bg-yellow-100', icon: any = 'hourglass-empty', textColor = 'text-yellow-800';
+    let displayText = statusObj?.label || donation.status;
+    
     // Only use valid MaterialIcons names
     switch (donation.status) {
       case 'pending':
@@ -191,6 +240,9 @@ const DonationDetail = () => {
         color = '#6366f1'; bg = 'bg-indigo-100'; icon = 'check-circle'; textColor = 'text-indigo-800'; break;
       case 'approvedF':
         color = '#16a34a'; bg = 'bg-green-100'; icon = 'assignment-turned-in'; textColor = 'text-green-800'; break;
+      case 'rejectedF':
+        color = '#ef4444'; bg = 'bg-red-100'; icon = 'close'; textColor = 'text-red-800'; 
+        displayText = 'You Rejected This Donation'; break;
       case 'volunteer is assigned':
         color = '#3b82f6'; bg = 'bg-blue-100'; icon = 'person'; textColor = 'text-blue-800'; break;
       case 'on the way to receive food':
@@ -201,19 +253,27 @@ const DonationDetail = () => {
         color = '#6366f1'; bg = 'bg-indigo-100'; icon = 'local-shipping'; textColor = 'text-indigo-800'; break;
       case 'delivered the food':
         color = '#16a34a'; bg = 'bg-green-100'; icon = 'check-circle'; textColor = 'text-green-800'; break;
+      case 'receiver confirmed':
+        color = '#16a34a'; bg = 'bg-green-100'; icon = 'check-circle'; textColor = 'text-green-800'; break;
+      case 'cancelled':
+        color = '#dc2626'; bg = 'bg-red-100'; icon = 'cancel'; textColor = 'text-red-800'; 
+        displayText = 'Donation Cancelled'; break;
+      case 'pending_other_ngo':
+        color = '#f59e0b'; bg = 'bg-yellow-100'; icon = 'share'; textColor = 'text-yellow-800'; 
+        displayText = 'Offered to Other NGOs'; break;
       default:
         color = '#9ca3af'; bg = 'bg-gray-100'; icon = 'info'; textColor = 'text-gray-700'; break;
     }
     // Only allow valid icon names
     const validIcons = [
-      'hourglass-empty', 'check-circle', 'assignment-turned-in', 'person', 'directions-run', 'restaurant', 'local-shipping', 'info'
+      'hourglass-empty', 'check-circle', 'assignment-turned-in', 'person', 'directions-run', 'restaurant', 'local-shipping', 'info', 'close', 'cancel', 'share'
     ];
     const safeIcon = validIcons.includes(icon) ? icon : 'info';
     return (
       <View className={`flex-row items-center rounded-xl px-4 py-3 mb-4 shadow ${bg}`}
         style={{ alignSelf: 'center', marginTop: 16, marginBottom: 16 }}>
         <MaterialIcons name={safeIcon} size={28} color={color} />
-        <Text className={`ml-4 font-bold text-lg ${textColor}`}>{statusObj?.label || donation.status}</Text>
+        <Text className={`ml-4 font-bold text-lg ${textColor}`}>{displayText}</Text>
       </View>
     );
   };
@@ -266,6 +326,27 @@ const DonationDetail = () => {
     }
   };
 
+  // Handle phone call
+  const handlePhoneCall = async (phoneNumber: string) => {
+    if (!phoneNumber || phoneNumber === 'No phone number available') {
+      Alert.alert('Error', 'No phone number available to call');
+      return;
+    }
+    
+    try {
+      const url = `tel:${phoneNumber}`;
+      const supported = await Linking.canOpenURL(url);
+      
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert('Error', 'Phone dialing is not supported on this device');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to open phone dialer');
+    }
+  };
+
   // Receiver confirmation handler
   const handleReceiverConfirm = async (confirmed: boolean) => {
     setIsLoading(true);
@@ -288,7 +369,87 @@ const DonationDetail = () => {
   };
 
   if (isLoading) {
-    return <Text>Loading...</Text>;
+    return (
+      <View style={{ flex: 1, backgroundColor: '#f8fafc', justifyContent: 'center', alignItems: 'center' }}>
+        <View style={{ alignItems: 'center' }}>
+          {/* Animated Ring */}
+          <View style={{ position: 'relative' }}>
+            {/* Outer Ring */}
+            <View style={{ 
+              width: 80, 
+              height: 80, 
+              borderWidth: 4, 
+              borderColor: '#bbf7d0', 
+              borderRadius: 40, 
+              alignItems: 'center', 
+              justifyContent: 'center' 
+            }}>
+              {/* Inner Ring */}
+              <View style={{ 
+                width: 48, 
+                height: 48, 
+                borderWidth: 4, 
+                borderColor: '#4ade80', 
+                borderRadius: 24,
+                opacity: 0.7
+              }}>
+                {/* Center Circle */}
+                <View style={{ 
+                  width: 24, 
+                  height: 24, 
+                  backgroundColor: '#16a34a', 
+                  borderRadius: 12,
+                  position: 'absolute',
+                  top: 8,
+                  left: 8
+                }} />
+              </View>
+            </View>
+            {/* Rotating Ring */}
+            <View style={{ 
+              position: 'absolute', 
+              inset: 0, 
+              width: 80, 
+              height: 80, 
+              borderWidth: 4, 
+              borderColor: 'transparent', 
+              borderTopColor: '#16a34a', 
+              borderRadius: 40,
+              transform: [{ rotate: '0deg' }]
+            }} />
+          </View>
+          
+          {/* Loading Text */}
+          <Text style={{ color: '#374151', fontSize: 18, fontWeight: '600', marginTop: 24 }}>Loading donation details...</Text>
+          <Text style={{ color: '#6b7280', fontSize: 14, marginTop: 8 }}>Please wait while we fetch the information</Text>
+          
+          {/* Loading Dots */}
+          <View style={{ flexDirection: 'row', marginTop: 16, gap: 8 }}>
+            <View style={{ 
+              width: 8, 
+              height: 8, 
+              backgroundColor: '#4ade80', 
+              borderRadius: 4,
+              opacity: 0.7
+            }} />
+            <View style={{ 
+              width: 8, 
+              height: 8, 
+              backgroundColor: '#4ade80', 
+              borderRadius: 4,
+              opacity: 0.7
+            }} />
+            <View style={{ 
+              width: 8, 
+              height: 8, 
+              backgroundColor: '#4ade80', 
+              borderRadius: 4,
+              opacity: 0.7
+            }} />
+          </View>
+        </View>
+      </View>
+    );
   }
   if (!donation) {
     return <Text>Donation not found or inaccessible.</Text>;
@@ -353,31 +514,113 @@ const DonationDetail = () => {
 
         <View className="px-6 pt-6">
           {getStatusBanner()}
-          <Text className="text-2xl font-bold text-gray-900">{donation?.Name}</Text>
-          <View className="flex-row items-center mt-2">
-            <MaterialIcons name="location-on" size={20} color="#6366f1" />
-            <Text className="text-gray-600 ml-2">{donation?.location}</Text>
-          </View>
 
           {/* Donor Information */}
           <View className="mt-6 bg-blue-50 rounded-xl p-4">
-            <Text className="text-lg font-bold text-gray-900 mb-2">Donor Information</Text>
-            <View className="flex-row items-center">
-              <MaterialIcons name="business" size={24} color="#6366f1" />
-              <View className="ml-3">
-                {userData?.fullName ? (
-                  <Text className="text-gray-900 font-medium">{userData.fullName}</Text>
-                ) : (
-                  <Text className="text-gray-900 font-medium">No name available</Text>
-                )}
-                {userData?.address ? (
-                  <Text className="text-gray-600 text-sm mt-1">{userData.address}</Text>
-                ) : (
-                  <Text className="text-gray-600 text-sm mt-1">No address available</Text>
-                )}
+            <View className="flex-row justify-between items-center mb-2">
+              <Text className="text-lg font-bold text-gray-900">Donor Information</Text>
+              <TouchableOpacity onPress={() => handlePhoneCall(donation?.donor_contact || userData?.phoneNumber || '')}>
+                <MaterialIcons name="phone" size={28} color="#6366f1" />
+              </TouchableOpacity>
+            </View>
+            <View className="space-y-3">
+              <View className="flex-row items-center">
+                <MaterialIcons name="business" size={24} color="#6366f1" />
+                <View className="ml-3">
+                  {userData?.fullName ? (
+                    <Text className="text-gray-900 font-medium">{userData.fullName}</Text>
+                  ) : (
+                    <Text className="text-gray-900 font-medium">No name available</Text>
+                  )}
+                  {userData?.address ? (
+                    <Text className="text-gray-600 text-sm mt-1">{userData.address}</Text>
+                  ) : (
+                    <Text className="text-gray-600 text-sm mt-1">No address available</Text>
+                  )}
+                </View>
+              </View>
+              <TouchableOpacity 
+                className="flex-row items-center"
+                onPress={() => handlePhoneCall(donation?.donor_contact || userData?.phoneNumber || '')}
+              >
+                <MaterialIcons name="phone" size={20} color="#6366f1" />
+                <Text className="text-blue-600 ml-3 underline">
+                  {donation?.donor_contact || userData?.phoneNumber || 'No phone number available'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Contact Person Information */}
+          <View className="mt-6 bg-purple-50 rounded-xl p-4">
+            <View className="flex-row justify-between items-center mb-2">
+              <Text className="text-lg font-bold text-gray-900">Contact Person</Text>
+              <TouchableOpacity onPress={() => handlePhoneCall(donation?.Contact || '')}>
+                <MaterialIcons name="phone" size={28} color="#9333ea" />
+              </TouchableOpacity>
+            </View>
+            <View className="space-y-3">
+              <View className="flex-row items-center">
+                <MaterialIcons name="person" size={24} color="#9333ea" />
+                <View className="ml-3">
+                  <Text className="text-gray-900 font-medium">{donation?.Name || 'No name available'}</Text>
+                </View>
+              </View>
+              <TouchableOpacity 
+                className="flex-row items-center"
+                onPress={() => handlePhoneCall(donation?.Contact || '')}
+              >
+                <MaterialIcons name="phone" size={20} color="#9333ea" />
+                <Text className="text-purple-600 ml-3 underline">
+                  {donation?.Contact || 'No phone number available'}
+                </Text>
+              </TouchableOpacity>
+              <View className="flex-row items-center">
+                <MaterialIcons name="location-on" size={20} color="#9333ea" />
+                <Text className="text-gray-600 ml-3">
+                  {donation?.Location || 'No location available'}
+                </Text>
               </View>
             </View>
           </View>
+
+          {/* Volunteer Information - Show only if volunteer is assigned */}
+          {volunteerData && (
+            <View className="mt-6 bg-green-50 rounded-xl p-4">
+              <View className="flex-row justify-between items-center mb-2">
+                <Text className="text-lg font-bold text-gray-900">Volunteer Information</Text>
+                <TouchableOpacity onPress={() => handlePhoneCall(volunteerData.phone || '')}>
+                  <MaterialIcons name="phone" size={28} color="#16a34a" />
+                </TouchableOpacity>
+              </View>
+              <View className="space-y-3">
+                <View className="flex-row items-center">
+                  <MaterialIcons name="person" size={24} color="#16a34a" />
+                  <View className="ml-3">
+                    <Text className="text-gray-900 font-medium">{volunteerData.name || 'No name available'}</Text>
+                    {volunteerData.address && (
+                      <Text className="text-gray-600 text-sm mt-1">{volunteerData.address}</Text>
+                    )}
+                  </View>
+                </View>
+                <TouchableOpacity 
+                  className="flex-row items-center"
+                  onPress={() => handlePhoneCall(volunteerData.phone || '')}
+                >
+                  <MaterialIcons name="phone" size={20} color="#16a34a" />
+                  <Text className="text-green-600 ml-3 underline">
+                    {volunteerData.phone || 'No phone number available'}
+                  </Text>
+                </TouchableOpacity>
+                <View className="flex-row items-center">
+                  <MaterialIcons name="email" size={20} color="#16a34a" />
+                  <Text className="text-gray-600 ml-3">
+                    {volunteerData.email || 'No email available'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
 
           {/* Donation Details */}
           <View className="mt-8">
@@ -425,27 +668,56 @@ const DonationDetail = () => {
             </View>
           </View>
 
-          {/* Contact Information */}
-          <View className="mt-6 bg-gray-50 rounded-xl p-4">
-            <Text className="text-lg font-bold text-gray-900 mb-3">Donor Information</Text>
-            <View className="space-y-3">
-              <View className="flex-row items-center">
-                <MaterialIcons name="person" size={20} color="#6366f1" />
-                <Text className="text-gray-600 ml-3">{donation.Name}</Text>
-              </View>
-              <View className="flex-row items-center">
-                <MaterialIcons name="phone" size={20} color="#6366f1" />
-                <Text className="text-gray-600 ml-3">{donation?.donor_contact}</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Timeline */}
+          {/* Timeline - Updated to match donor's implementation */}
           <View className="bg-white rounded-xl p-4 border border-gray-100 mt-8 mb-8">
             <Text className="font-bold text-gray-800 mb-3">Timeline</Text>
             {STATUS_STAGES.map((stage, index) => {
-              const isCompleted = index < currentStatusIndex;
-              const isCurrent = index === currentStatusIndex;
+              // Handle receiver acceptance step
+              if (stage.key === 'receiver_acceptance') {
+                // Show this step when status is approvedF, rejectedF, or any status after approvedF
+                const shouldShow = ['approvedF', 'rejectedF', 'volunteer is assigned', 'on the way to receive food', 'food collected', 'on the way to deliver food', 'delivered the food', 'receiver confirmed'].includes(donation?.status || '');
+                if (!shouldShow) return null;
+                
+                // Determine if this step is completed, current, or pending
+                let isCompleted = false;
+                let isCurrent = false;
+                let customLabel = stage.label;
+                let customDescription = stage.description;
+                
+                if (donation?.status === 'rejectedF') {
+                  isCompleted = true;
+                  customLabel = 'You Rejected';
+                  customDescription = 'You rejected the donation offer.';
+                } else if (['volunteer is assigned', 'on the way to receive food', 'food collected', 'on the way to deliver food', 'delivered the food', 'receiver confirmed'].includes(donation?.status || '')) {
+                  isCompleted = true;
+                  customLabel = 'You Accepted';
+                  customDescription = 'You accepted the donation offer.';
+                } else if (donation?.status === 'approvedF') {
+                  isCurrent = true;
+                  customLabel = 'Your Decision';
+                  customDescription = 'You need to accept or reject the donation offer.';
+                }
+                
+                return (
+                  <View key={stage.key} className="flex-row mb-4 last:mb-0 items-center">
+                    <View className="items-center mr-4">
+                      <View className={`w-4 h-4 rounded-full ${isCompleted ? 'bg-green-500' : isCurrent ? 'bg-blue-500' : 'bg-gray-300'} border-2 border-white shadow`} />
+                      {index !== STATUS_STAGES.length - 1 && (
+                        <View className={`w-0.5 h-8 ${isCompleted ? 'bg-green-200' : isCurrent ? 'bg-blue-200' : 'bg-gray-200'} my-1`} />
+                      )}
+                    </View>
+                    <View className="flex-1">
+                      <Text className={`font-medium text-base ${isCompleted ? 'text-green-700' : isCurrent ? 'text-blue-700' : 'text-gray-400'}`}>{customLabel}</Text>
+                      <Text className={`text-sm ${isCompleted ? 'text-green-600' : isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>{customDescription}</Text>
+                    </View>
+                  </View>
+                );
+              }
+              
+              // For all other stages, show them normally
+              const isCompleted = index < STATUS_STAGES.findIndex(s => s.key === donation?.status);
+              const isCurrent = index === STATUS_STAGES.findIndex(s => s.key === donation?.status);
+              
               return (
                 <View key={stage.key} className="flex-row mb-4 last:mb-0 items-center">
                   <View className="items-center mr-4">

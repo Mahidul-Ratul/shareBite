@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Linking, Dimensions } from 'react-native';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../../constants/supabaseConfig';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const { width, height } = Dimensions.get('window');
 
 const STATUS_STAGES = [
   'volunteer is assigned',
@@ -32,6 +35,9 @@ export default function OngoingDonation() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState('');
+  const [donorData, setDonorData] = useState<any>(null);
+  const [receiverData, setReceiverData] = useState<any>(null);
+  const [contactPersonData, setContactPersonData] = useState<any>(null);
   const router = useRouter();
 
   // Helper to get volunteer id from volunteer table using email
@@ -79,6 +85,35 @@ export default function OngoingDonation() {
           .single();
         if (donationError && donationError.code !== 'PGRST116') throw donationError;
         setDonation(donationData || null);
+
+        // Fetch donor information
+        if (donationData?.donor_id) {
+          const { data: donorInfo, error: donorError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', donationData.donor_id)
+            .single();
+          if (!donorError) setDonorData(donorInfo);
+        }
+
+        // Fetch receiver information
+        if (donationData?.ngo_id) {
+          const { data: receiverInfo, error: receiverError } = await supabase
+            .from('receiver')
+            .select('*')
+            .eq('id', donationData.ngo_id)
+            .single();
+          if (!receiverError) setReceiverData(receiverInfo);
+        }
+
+        // Set contact person data from donation
+        if (donationData) {
+          setContactPersonData({
+            name: donationData.Name,
+            contact: donationData.Contact,
+            location: donationData.Location
+          });
+        }
       } catch (err) {
         setError('Failed to fetch ongoing donation.');
         setDonation(null);
@@ -89,6 +124,27 @@ export default function OngoingDonation() {
     };
     fetchOngoingDonation();
   }, []);
+
+  // Phone call functionality
+  const handlePhoneCall = async (phoneNumber: string) => {
+    if (!phoneNumber) {
+      Alert.alert('Error', 'No phone number available');
+      return;
+    }
+    
+    try {
+      const url = `tel:${phoneNumber}`;
+      const supported = await Linking.canOpenURL(url);
+      
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert('Error', 'Phone calls are not supported on this device');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to make phone call');
+    }
+  };
 
   // Handle status update
   const handleStatusUpdate = async (nextStatus: string) => {
@@ -183,34 +239,247 @@ export default function OngoingDonation() {
 
   // Find the next status in the workflow
   const currentIndex = STATUS_STAGES.indexOf(donation.status);
-  const nextStatus = STATUS_STAGES[currentIndex + 1];
+  const nextStatus = currentIndex >= 0 && currentIndex < STATUS_STAGES.length - 1 ? STATUS_STAGES[currentIndex + 1] : null;
 
   return (
-    <View className="flex-1 bg-white">
-      <ScrollView className="flex-1 px-6 pt-10">
-        <Text className="text-2xl font-bold text-gray-900 mb-4">Ongoing Donation</Text>
-        <View className="bg-white rounded-xl p-4 shadow mb-6">
-          <Text className="text-lg font-semibold text-gray-800 mb-2">{donation.Details || 'No details'}</Text>
-          <Text className="text-gray-600 mb-1">Status: <Text className="font-bold text-indigo-700">{donation.status}</Text></Text>
-          <Text className="text-gray-600 mb-1">Location: {donation.Location}</Text>
-          <Text className="text-gray-600 mb-1">Quantity: {donation.Quantity}</Text>
-          <Text className="text-gray-600 mb-1">Instructions: {donation.Instructions}</Text>
+    <View className="flex-1 bg-gray-50">
+      <LinearGradient 
+        colors={['#f97316', '#ea580c', '#dc2626']} 
+        className="pt-12 pb-6 px-6"
+        style={{ borderBottomLeftRadius: 30, borderBottomRightRadius: 30 }}
+      >
+        <View className="flex-row items-center justify-between mb-4">
+          <TouchableOpacity 
+            onPress={() => router.back()}
+            className="p-2 rounded-full bg-white/20"
+          >
+            <MaterialIcons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text className="text-white text-xl font-bold">Active Mission</Text>
+          <View className="w-10" />
         </View>
-        <View className="mb-6">
-          <Text className="text-base font-medium mb-2">Update Status</Text>
+        
+        <View className="bg-white/20 rounded-2xl p-4 backdrop-blur-sm">
+          <Text className="text-white text-lg font-bold mb-2">{donation.Details || 'Donation Details'}</Text>
+          <View className="flex-row items-center">
+            <View className="bg-white/30 rounded-full px-3 py-1">
+              <Text className="text-white text-sm font-medium">{donation.status}</Text>
+            </View>
+            <View className="ml-3 bg-white/20 rounded-full px-3 py-1">
+              <Text className="text-white text-sm">Qty: {donation.Quantity}</Text>
+            </View>
+          </View>
+        </View>
+      </LinearGradient>
+
+      <ScrollView className="flex-1 px-6 pt-6" showsVerticalScrollIndicator={false}>
+        {/* Simple & Clear Action Button */}
+        <View className="mb-6 bg-white rounded-xl p-4 shadow-lg border-2 border-orange-200">
+          <Text className="text-center text-gray-700 font-semibold mb-3">Update Mission Status</Text>
           {nextStatus ? (
             <TouchableOpacity
-              className="bg-orange-500 rounded-xl py-4"
               onPress={() => handleStatusUpdate(nextStatus)}
               disabled={updating}
+              className="bg-orange-500 rounded-lg py-3 px-4"
+              style={{ elevation: 4 }}
             >
-              <Text className="text-white text-center text-lg font-bold">
-                {updating ? 'Updating...' : `Mark as "${nextStatus}"`}
-              </Text>
+              <View className="flex-row items-center justify-center">
+                <MaterialIcons name="arrow-forward" size={20} color="#fff" />
+                <Text className="text-white text-center font-bold ml-2">
+                  {updating ? 'Updating...' : `Next: ${nextStatus || 'Unknown'}`}
+                </Text>
+              </View>
             </TouchableOpacity>
           ) : (
-            <Text className="text-green-700 font-bold">Donation process completed!</Text>
+            <View className="bg-green-500 rounded-lg py-3 px-4">
+              <View className="flex-row items-center justify-center">
+                <MaterialIcons name="check-circle" size={20} color="#fff" />
+                <Text className="text-white text-center font-bold ml-2">Mission Completed!</Text>
+              </View>
+            </View>
           )}
+        </View>
+
+        {/* Progress Timeline */}
+        <View className="bg-white rounded-2xl p-6 mb-6 shadow-lg">
+          <Text className="text-lg font-bold text-gray-900 mb-4">Mission Progress</Text>
+          {STATUS_STAGES.map((stage, index) => {
+            const isCompleted = STATUS_STAGES.indexOf(donation.status) >= index;
+            const isCurrent = donation.status === stage;
+            
+            return (
+              <View key={stage} className="flex-row items-center mb-4 last:mb-0">
+                <View className="items-center mr-4">
+                  <View className={`w-6 h-6 rounded-full border-2 ${isCompleted ? 'bg-orange-500 border-orange-500' : 'bg-gray-200 border-gray-300'} items-center justify-center`}>
+                    {isCompleted && <MaterialIcons name="check" size={16} color="#fff" />}
+                  </View>
+                  {index < STATUS_STAGES.length - 1 && (
+                    <View className={`w-0.5 h-8 ${isCompleted ? 'bg-orange-200' : 'bg-gray-200'} my-1`} />
+                  )}
+                </View>
+                <View className="flex-1">
+                  <Text className={`font-semibold ${isCompleted ? 'text-orange-700' : 'text-gray-400'}`}>
+                    {stage.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                  </Text>
+                  {isCurrent && (
+                    <Text className="text-orange-600 text-sm font-medium">Current Step</Text>
+                  )}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Donor Information */}
+        {donorData && (
+          <View className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 mb-6 shadow-lg border border-blue-100">
+            <View className="flex-row justify-between items-center mb-4">
+              <Text className="text-lg font-bold text-gray-900">Donor Information</Text>
+              <TouchableOpacity onPress={() => handlePhoneCall(donorData.phoneNumber || '')}>
+                <MaterialIcons name="phone" size={28} color="#6366f1" />
+              </TouchableOpacity>
+            </View>
+            <View className="space-y-3">
+              <View className="flex-row items-center">
+                <View className="bg-blue-100 rounded-full p-2 mr-3">
+                  <MaterialIcons name="person" size={20} color="#6366f1" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-gray-900 font-semibold">{donorData.fullName || 'No name available'}</Text>
+                  {donorData.address && (
+                    <Text className="text-gray-600 text-sm mt-1">{donorData.address}</Text>
+                  )}
+                </View>
+              </View>
+              <TouchableOpacity 
+                className="flex-row items-center"
+                onPress={() => handlePhoneCall(donorData.phoneNumber || '')}
+              >
+                <View className="bg-blue-100 rounded-full p-2 mr-3">
+                  <MaterialIcons name="phone" size={20} color="#6366f1" />
+                </View>
+                <Text className="text-blue-600 font-medium">
+                  {donorData.phoneNumber || 'No phone number available'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Contact Person Information */}
+        {contactPersonData && (
+          <View className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl p-6 mb-6 shadow-lg border border-purple-100">
+            <View className="flex-row justify-between items-center mb-4">
+              <Text className="text-lg font-bold text-gray-900">Contact Person</Text>
+              <TouchableOpacity onPress={() => handlePhoneCall(contactPersonData.contact || '')}>
+                <MaterialIcons name="phone" size={28} color="#9333ea" />
+              </TouchableOpacity>
+            </View>
+            <View className="space-y-3">
+              <View className="flex-row items-center">
+                <View className="bg-purple-100 rounded-full p-2 mr-3">
+                  <MaterialIcons name="person" size={20} color="#9333ea" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-gray-900 font-semibold">{contactPersonData.name || 'No name available'}</Text>
+                </View>
+              </View>
+              <TouchableOpacity 
+                className="flex-row items-center"
+                onPress={() => handlePhoneCall(contactPersonData.contact || '')}
+              >
+                <View className="bg-purple-100 rounded-full p-2 mr-3">
+                  <MaterialIcons name="phone" size={20} color="#9333ea" />
+                </View>
+                <Text className="text-purple-600 font-medium">
+                  {contactPersonData.contact || 'No phone number available'}
+                </Text>
+              </TouchableOpacity>
+              <View className="flex-row items-center">
+                <View className="bg-purple-100 rounded-full p-2 mr-3">
+                  <MaterialIcons name="location-on" size={20} color="#9333ea" />
+                </View>
+                <Text className="text-gray-600">
+                  {contactPersonData.location || 'No location available'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Receiver Information */}
+        {receiverData && (
+          <View className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-6 mb-6 shadow-lg border border-green-100">
+            <View className="flex-row justify-between items-center mb-4">
+              <Text className="text-lg font-bold text-gray-900">Receiver Information</Text>
+              <TouchableOpacity onPress={() => handlePhoneCall(receiverData.phone || '')}>
+                <MaterialIcons name="phone" size={28} color="#16a34a" />
+              </TouchableOpacity>
+            </View>
+            <View className="space-y-3">
+              <View className="flex-row items-center">
+                <View className="bg-green-100 rounded-full p-2 mr-3">
+                  <MaterialIcons name="business" size={20} color="#16a34a" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-gray-900 font-semibold">{receiverData.name || 'No name available'}</Text>
+                  <Text className="text-gray-600 text-sm mt-1">{receiverData.type || 'No type available'}</Text>
+                </View>
+              </View>
+              <TouchableOpacity 
+                className="flex-row items-center"
+                onPress={() => handlePhoneCall(receiverData.phone || '')}
+              >
+                <View className="bg-green-100 rounded-full p-2 mr-3">
+                  <MaterialIcons name="phone" size={20} color="#16a34a" />
+                </View>
+                <Text className="text-green-600 font-medium">
+                  {receiverData.phone || 'No phone number available'}
+                </Text>
+              </TouchableOpacity>
+              <View className="flex-row items-center">
+                <View className="bg-green-100 rounded-full p-2 mr-3">
+                  <MaterialIcons name="email" size={20} color="#16a34a" />
+                </View>
+                <Text className="text-gray-600">
+                  {receiverData.email || 'No email available'}
+                </Text>
+              </View>
+              <View className="flex-row items-center">
+                <View className="bg-green-100 rounded-full p-2 mr-3">
+                  <MaterialIcons name="location-on" size={20} color="#16a34a" />
+                </View>
+                <Text className="text-gray-600">
+                  {receiverData.location || 'No location available'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Donation Details */}
+        <View className="bg-white rounded-2xl p-6 mb-6 shadow-lg">
+          <Text className="text-lg font-bold text-gray-900 mb-4">Mission Details</Text>
+          <View className="space-y-4">
+            <View className="flex-row items-center">
+              <View className="bg-orange-100 rounded-full p-2 mr-3">
+                <MaterialIcons name="restaurant" size={20} color="#f97316" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-gray-600 text-sm">Instructions</Text>
+                <Text className="text-gray-900 font-medium">{donation.Instructions || 'No instructions'}</Text>
+              </View>
+            </View>
+            <View className="flex-row items-center">
+              <View className="bg-orange-100 rounded-full p-2 mr-3">
+                <MaterialIcons name="location-on" size={20} color="#f97316" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-gray-600 text-sm">Pickup Location</Text>
+                <Text className="text-gray-900 font-medium">{donation.Location || 'No location'}</Text>
+              </View>
+            </View>
+          </View>
         </View>
       </ScrollView>
     </View>
