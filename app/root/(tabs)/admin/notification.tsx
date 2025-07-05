@@ -10,9 +10,10 @@ interface Notification {
   message: string;
   created_at: string;
   donation_id: string;
-  type: 'accepted' | 'pickup' | 'completed' | 'cancelled' | 'assigned';
+  type: 'accepted' | 'pickup' | 'completed' | 'cancelled' | 'assigned' | 'request';
   isread: boolean;
-  for:string
+  for:string;
+  request_id?: string;
 }
   
    
@@ -69,6 +70,8 @@ export default function NotificationList() {
         return { bg: 'bg-green-100', icon: 'check-double', color: '#16a34a' };
       case 'cancelled':
         return { bg: 'bg-red-100', icon: 'times-circle', color: '#dc2626' };
+      case 'request':
+        return { bg: 'bg-blue-100', icon: 'file-alt', color: '#2563eb' };
       default:
         return { bg: 'bg-gray-100', icon: 'bell', color: '#6b7280' }; // fallback
     }
@@ -96,11 +99,17 @@ export default function NotificationList() {
       }`}
       onPress={async () => {
         await markAsRead(notification.id);
-        // Always navigate to the detail page, regardless of donation status
-        router.push({
-          pathname: '/root/(tabs)/admin/DonationDetailN',
-          params: { id: notification.donation_id },
-        });
+        if (notification.type === 'request') {
+          router.push({
+            pathname: '/root/(tabs)/admin/request_details',
+            params: { request_id: notification.request_id },
+          });
+        } else {
+          router.push({
+            pathname: '/root/(tabs)/admin/DonationDetailN',
+            params: { id: notification.donation_id },
+          });
+        }
       }}
     >
       <View className="flex-row items-center space-x-4">

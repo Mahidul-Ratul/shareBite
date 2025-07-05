@@ -33,7 +33,10 @@ const DonateForm = () => {
     donor_lat,
     donor_lng,
     donor_location,
-    ngo_location
+    ngo_location,
+    request_id,
+    receiver_id,
+    receiver_name
   } = params;
 
   // Request permission to access gallery
@@ -200,7 +203,8 @@ const DonateForm = () => {
             Producing: producingTime?.toISOString(),
             Lasting: lastingTime?.toISOString(),
             ngo_id: selectedNGO, // Store the selected NGO's UUID here
-            donor_id: userId, 
+            donor_id: userId,
+            request_id: request_id || null, // Store the request_id if available
           },
         ])
         .select(); // Use `.select()` to retrieve the inserted record, including its `id`
@@ -237,8 +241,20 @@ const DonateForm = () => {
   };
 
   useEffect(() => {
-    // Only set if not already set
-    if (ngo_id && donor_lat && donor_lng && donor_location && (!location || !selectedNGO)) {
+    // Handle request-based donation
+    if (request_id && receiver_id && receiver_name) {
+      setSelectedNGO(receiver_id as string);
+      // Set location from select_location page
+      if (donor_lat && donor_lng) {
+        setLocation({ latitude: Number(donor_lat), longitude: Number(donor_lng) });
+        // Get location name for display
+        getLocationName(Number(donor_lat), Number(donor_lng)).then(locationName => {
+          setLocationText(locationName);
+        });
+      }
+    }
+    // Handle regular donation flow
+    else if (ngo_id && donor_lat && donor_lng && donor_location && (!location || !selectedNGO)) {
       setSelectedNGO(ngo_id as string);
       setLocation({ latitude: Number(donor_lat), longitude: Number(donor_lng) });
       setLocationText(donor_location as string);
@@ -257,13 +273,22 @@ const DonateForm = () => {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ngo_id, donor_lat, donor_lng, donor_location, ngo_location]);
+  }, [ngo_id, donor_lat, donor_lng, donor_location, ngo_location, request_id, receiver_id, receiver_name]);
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ paddingBottom: 20 }} className="bg-white">
         <View className="px-5 py-4">
           <Text className="font-rubik-semibols text-3xl px-3 pt-3 mb-5">Donate Food</Text>
+          
+          {/* Show request information if this is a request-based donation */}
+          {request_id && receiver_name && (
+            <View className="bg-orange-50 p-4 rounded-lg mb-4 border border-orange-200">
+              <Text className="font-rubik-bold text-orange-800 text-lg mb-2">Donating for Request</Text>
+              <Text className="font-rubik text-orange-700">Receiver: {receiver_name}</Text>
+              <Text className="font-rubik text-orange-600 text-sm mt-1">Request ID: {request_id}</Text>
+            </View>
+          )}
 
           {/* Food Details */}
           <TextInput
@@ -330,7 +355,9 @@ const DonateForm = () => {
           )}
 
           {/* Map to select location */}
-          <Text className="text-lg font-rubik-medium mt-5">Select Location</Text>
+          <Text className="text-lg font-rubik-medium mt-5">
+            {request_id ? 'Donation Location (Pre-selected)' : 'Select Location'}
+          </Text>
           <MapView
             style={{ width: '100%', height: 200 }}
             initialRegion={{
@@ -339,22 +366,39 @@ const DonateForm = () => {
               latitudeDelta: 0.0922,
               longitudeDelta: 0.0421,
             }}
-            onPress={handleMapPress}
+            onPress={request_id ? undefined : handleMapPress}
+            scrollEnabled={!request_id}
+            zoomEnabled={!request_id}
+            rotateEnabled={!request_id}
           >
-            {location && <Marker coordinate={location} draggable onDragEnd={handleMarkerDragEnd} />}
+            {location && (
+              <Marker 
+                coordinate={location} 
+                draggable={!request_id} 
+                onDragEnd={request_id ? undefined : handleMarkerDragEnd} 
+              />
+            )}
           </MapView>
 
           {/* Display the location in input text */}
           <TextInput
-            placeholder="Selected Location"
+            placeholder={request_id ? "Pre-selected donation location" : "Selected Location"}
             value={locationText}
             onChangeText={setLocationText}
-            editable={false}
-            className="border border-gray-300 rounded-lg p-3 mt-2 mb-4"
+            editable={!request_id}
+            className={`border border-gray-300 rounded-lg p-3 mt-2 mb-4 ${
+              request_id ? 'bg-gray-100' : ''
+            }`}
           />
 
           {/* NGO Selection */}
-          {nearbyNGOs.length > 0 && (
+          {request_id && receiver_name ? (
+            <View className="bg-green-50 p-4 rounded-lg mb-4 border border-green-200">
+              <Text className="font-rubik-bold text-green-800 text-lg mb-2">Selected Receiver</Text>
+              <Text className="font-rubik text-green-700">{receiver_name}</Text>
+              <Text className="font-rubik text-green-600 text-sm mt-1">This receiver will receive your donation</Text>
+            </View>
+          ) : nearbyNGOs.length > 0 && (
             <>
               <Text className="text-lg font-rubik-medium mb-2">Select Nearby NGO/Charity</Text>
               <View className="border border-gray-300 rounded-lg mb-4">

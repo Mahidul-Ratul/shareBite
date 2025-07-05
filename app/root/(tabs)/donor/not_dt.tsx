@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, Linking } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, Linking, Modal } from 'react-native';
 import { MaterialIcons, FontAwesome5, Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams, Link } from "expo-router";
 import { supabase } from '../../../../constants/supabaseConfig';
@@ -12,50 +12,63 @@ export default function NotificationDetail() {
   const [receiver, setReceiver] = useState<any>(null);
   const [volunteerData, setVolunteerData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [hasRated, setHasRated] = useState(false);
+  const [selectedRating, setSelectedRating] = useState(0);
 
   useEffect(() => {
     const fetchDonation = async () => {
       setLoading(true);
       if (!donation_id) return;
-      const { data, error } = await supabase
-        .from('donation')
-        .select('*')
-        .eq('id', donation_id)
-        .single();
-      if (!error && data) {
-        setDonation(data);
-        if (data.ngo_id) {
-          const { data: recData } = await supabase
-            .from('receiver')
-            .select('*')
-            .eq('id', data.ngo_id)
-            .single();
-          setReceiver(recData);
-        }
+      
+      try {
+        // Fetch donation data first
+        const { data, error } = await supabase
+          .from('donation')
+          .select('*')
+          .eq('id', donation_id)
+          .single();
         
-        // Fetch volunteer information if volunteer is assigned
-        if (data?.volunteer_id && data.volunteer_id !== 'ngo') {
-          console.log('Fetching volunteer data for ID:', data.volunteer_id);
-          const { data: volunteerData, error: volunteerError } = await supabase
-            .from('volunteer')
-            .select('*')
-            .eq('id', data.volunteer_id)
-            .single();
-          if (!volunteerError) {
-            console.log('Volunteer data fetched successfully:', volunteerData);
-            setVolunteerData(volunteerData);
-          } else {
-            console.log('Error fetching volunteer data:', volunteerError);
+        if (!error && data) {
+          setDonation(data);
+          
+          // Fetch receiver and volunteer data in parallel for better performance
+          const promises = [];
+          
+          if (data.ngo_id) {
+            promises.push(
+              supabase
+                .from('receiver')
+                .select('*')
+                .eq('id', data.ngo_id)
+                .single()
+                .then(({ data: recData }) => setReceiver(recData))
+            );
           }
-        } else {
-          console.log('No volunteer_id or volunteer_id is "ngo":', data?.volunteer_id);
+          
+          if (data?.volunteer_id && data.volunteer_id !== 'ngo') {
+            promises.push(
+              supabase
+                .from('volunteer')
+                .select('*')
+                .eq('id', data.volunteer_id)
+                .single()
+                .then(({ data: volData, error: volError }) => {
+                  if (!volError) {
+                    setVolunteerData(volData);
+                  }
+                })
+            );
+          }
+          
+          // Wait for all data to load
+          await Promise.all(promises);
         }
-        
-        // Debug: Log donation status and volunteer_id
-        console.log('Donation status:', data?.status);
-        console.log('Volunteer ID:', data?.volunteer_id);
+      } catch (error) {
+        console.error('Error fetching donation data:', error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     fetchDonation();
   }, [donation_id]);
@@ -358,6 +371,59 @@ export default function NotificationDetail() {
     }
   };
 
+  // Rating functions
+  const handleRatingSubmit = async () => {
+    if (selectedRating === 0) {
+      Alert.alert('Please select a rating', 'Please select a rating before submitting.');
+      return;
+    }
+
+    if (!volunteerData) {
+      Alert.alert('Error', 'Volunteer information not available.');
+      return;
+    }
+
+    try {
+      // Update volunteer's points
+      const currentPoints = volunteerData.point || 0;
+      const newPoints = currentPoints + selectedRating;
+      
+      const { error } = await supabase
+        .from('volunteer')
+        .update({ point: newPoints })
+        .eq('id', volunteerData.id);
+
+      if (error) {
+        Alert.alert('Error', 'Failed to submit rating. Please try again.');
+        return;
+      }
+
+      setHasRated(true);
+      setShowRatingModal(false);
+      Alert.alert('Success', 'Thank you for rating the volunteer!');
+      
+      // Refresh volunteer data to show updated points
+      const { data: updatedVolunteer } = await supabase
+        .from('volunteer')
+        .select('*')
+        .eq('id', volunteerData.id)
+        .single();
+      
+      if (updatedVolunteer) {
+        setVolunteerData(updatedVolunteer);
+      }
+    } catch (error) {
+      console.error('Error submitting rating:', error);
+      Alert.alert('Error', 'Failed to submit rating. Please try again.');
+    }
+  };
+
+  const shouldShowRatingButton = () => {
+    return donation?.status === 'receiver confirmed' && 
+           volunteerData && 
+           !hasRated;
+  };
+
   return (
     <View className="flex-1 bg-gray-50">
       {/* Header */}
@@ -481,6 +547,14 @@ export default function NotificationDetail() {
                         {volunteerData.email || 'No email available'}
                       </Text>
                     </View>
+                    {volunteerData.point && (
+                      <View className="flex-row items-center">
+                        <MaterialIcons name="star" size={20} color="#fbbf24" />
+                        <Text className="text-gray-600 ml-3">
+                          Total Points: {volunteerData.point}
+                        </Text>
+                      </View>
+                    )}
                   </>
                 ) : (
                   <View className="flex-row items-center">
@@ -492,6 +566,17 @@ export default function NotificationDetail() {
                   </View>
                 )}
               </View>
+              
+              {/* Rating Button */}
+              {shouldShowRatingButton() && (
+                <TouchableOpacity
+                  className="mt-4 bg-yellow-500 rounded-xl py-3 px-4 flex-row items-center justify-center"
+                  onPress={() => setShowRatingModal(true)}
+                >
+                  <MaterialIcons name="star" size={24} color="#fff" />
+                  <Text className="text-white font-bold ml-2 text-lg">Rate Volunteer</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
 
@@ -613,7 +698,81 @@ export default function NotificationDetail() {
         </View>
       )}
 
+      {/* Rating Modal */}
+      <Modal
+        visible={showRatingModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowRatingModal(false)}
+      >
+        <View className="flex-1 bg-black bg-opacity-50 justify-center items-center p-4">
+          <View className="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <View className="items-center mb-6">
+              <MaterialIcons name="star" size={48} color="#fbbf24" />
+              <Text className="text-2xl font-bold text-gray-800 mt-2">Rate Volunteer</Text>
+              <Text className="text-gray-600 text-center mt-2">
+                How would you rate {volunteerData?.name || 'the volunteer'}?
+              </Text>
+            </View>
 
+            {/* Star Rating */}
+            <View className="flex-row justify-center mb-6">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity
+                  key={star}
+                  onPress={() => setSelectedRating(star)}
+                  className="mx-1"
+                >
+                  <MaterialIcons
+                    name={star <= selectedRating ? "star" : "star-border"}
+                    size={40}
+                    color={star <= selectedRating ? "#fbbf24" : "#d1d5db"}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Rating Text */}
+            {selectedRating > 0 && (
+              <View className="items-center mb-6">
+                <Text className="text-lg font-semibold text-gray-800">
+                  {selectedRating === 1 && "Poor"}
+                  {selectedRating === 2 && "Fair"}
+                  {selectedRating === 3 && "Good"}
+                  {selectedRating === 4 && "Very Good"}
+                  {selectedRating === 5 && "Excellent"}
+                </Text>
+                <Text className="text-gray-600">
+                  {selectedRating} out of 5 stars
+                </Text>
+              </View>
+            )}
+
+            {/* Action Buttons */}
+            <View className="flex-row space-x-3">
+              <TouchableOpacity
+                className="flex-1 bg-gray-300 rounded-xl py-3"
+                onPress={() => {
+                  setShowRatingModal(false);
+                  setSelectedRating(0);
+                }}
+              >
+                <Text className="text-gray-700 font-bold text-center">Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                className={`flex-1 rounded-xl py-3 ${selectedRating > 0 ? 'bg-yellow-500' : 'bg-gray-300'}`}
+                onPress={handleRatingSubmit}
+                disabled={selectedRating === 0}
+              >
+                <Text className={`font-bold text-center ${selectedRating > 0 ? 'text-white' : 'text-gray-500'}`}>
+                  Submit
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

@@ -12,6 +12,7 @@ interface Notification {
   created_at: string;
   isread: boolean;
   donation_id: string;
+  request_id?: string;
   status?: string;
 }
 
@@ -46,8 +47,8 @@ export default function NotificationList() {
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
-        .eq('for', 'donor')
-        .eq('donor_id', donorData.id)
+        .or(`for.eq.donor,for.eq.${user.email}`)
+        .or(`donor_id.eq.${donorData.id},donor_id.is.null`)
         .order('created_at', { ascending: false });
       if (!error && data) {
         setNotifications(data);
@@ -69,6 +70,8 @@ export default function NotificationList() {
         return { bg: 'bg-green-100', icon: 'check-double', color: '#16a34a' };
       case 'cancelled':
         return { bg: 'bg-red-100', icon: 'times-circle', color: '#dc2626' };
+      case 'request':
+        return { bg: 'bg-orange-100', icon: 'hand-holding-heart', color: '#ea580c' };
       default:
         return { bg: 'bg-gray-100', icon: 'bell', color: '#6B7280' };
     }
@@ -105,10 +108,19 @@ export default function NotificationList() {
                       .eq('id', notification.id);
                     setNotifications((prev) => prev.map((n) => n.id === notification.id ? { ...n, isread: true } : n));
                   }
-                  router.push({
-                    pathname: './not_dt',
-                    params: { donation_id: notification.donation_id }
-                  });
+                  
+                  // Navigate based on notification type
+                  if (notification.type === 'request') {
+                    router.push({
+                      pathname: './request_details',
+                      params: { request_id: notification.request_id }
+                    });
+                  } else {
+                    router.push({
+                      pathname: './not_dt',
+                      params: { donation_id: notification.donation_id }
+                    });
+                  }
                 }}
               >
                 <View className="flex-row">

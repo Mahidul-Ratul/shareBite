@@ -1,10 +1,111 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity, TextInput } from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert } from "react-native";
 import { Link, useRouter } from "expo-router";
 import { FontAwesome, MaterialIcons, Ionicons } from "@expo/vector-icons";
+import { supabase } from '../../../../constants/supabaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function DonationRequest() {
   const router = useRouter();
+
+  // State for form fields
+  const [foodType, setFoodType] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [services, setServices] = useState("");
+  const [description, setDescription] = useState("");
+  const [pickupAddress, setPickupAddress] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!foodType || !quantity || !services || !description || !pickupAddress) {
+      Alert.alert("Error", "Please fill in all fields.");
+      return;
+    }
+    setLoading(true);
+    try {
+      // Get the current receiver's ID
+      const userEmail = await AsyncStorage.getItem("userEmail");
+      if (!userEmail) {
+        Alert.alert("Error", "User not found. Please login again.");
+        return;
+      }
+      
+      const { data: receiverData, error: receiverError } = await supabase
+        .from('receiver')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+      
+      if (receiverError || !receiverData) {
+        Alert.alert("Error", "Receiver information not found.");
+        return;
+      }
+      
+      const { data, error } = await supabase.from('request').insert([
+        {
+          food_type: foodType,
+          quantity: quantity,
+          services: services,
+          description: description,
+          pickup_address: pickupAddress,
+          ngo_id: receiverData.id,
+        }
+      ]).select();
+      if (error) {
+        console.log('Supabase insert error:', error);
+        throw error;
+      }
+      // Send notifications to admin and all donors
+      const requestId = data && data[0] && data[0].id;
+      const now = new Date().toISOString();
+      // Fetch all donors (get both email and id)
+      const { data: donors, error: donorsError } = await supabase.from('users').select('email, id');
+      if (donorsError) {
+        console.log('Donors fetch error:', donorsError);
+      }
+      const notificationPayloads = [
+        {
+          title: 'New Donation Request',
+          message: `A new donation request has been submitted for ${foodType} (${quantity}).`,
+          created_at: now,
+          type: 'request',
+          isread: false,
+          for: 'admin',
+          request_id: requestId,
+          ngo_id: receiverData.id,
+        },
+        // Notifications for all donors (with both for and donor_id)
+        ...(donors ? donors.map((donor: any) => ({
+          title: 'New Donation Request',
+          message: `A new donation request for ${foodType} (${quantity}) is available!`,
+          created_at: now,
+          type: 'request',
+          isread: false,
+          for: donor.email,
+          donor_id: donor.id || null,
+          request_id: requestId,
+          ngo_id: receiverData.id,
+        })) : [])
+      ];
+      console.log('Notification payloads:', notificationPayloads);
+      const { error: notifError } = await supabase.from('notifications').insert(notificationPayloads);
+      if (notifError) {
+        console.log('Notification insert error:', notifError);
+      }
+      Alert.alert("Success", "Request submitted successfully!", [
+        { text: "OK", onPress: () => router.push("./dashboard") }
+      ]);
+      setFoodType("");
+      setQuantity("");
+      setServices("");
+      setDescription("");
+      setPickupAddress("");
+    } catch (error) {
+      Alert.alert("Error", (error as any).message || "Failed to submit request.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <View className="flex-1 bg-gray-50">
@@ -23,8 +124,8 @@ export default function DonationRequest() {
             <TextInput
               className="bg-gray-50 px-4 py-3 rounded-xl font-rubik text-gray-800"
               placeholder="e.g., Cooked Meals, Packaged Food"
-              // value={formData.foodType}
-              // onChangeText={(text) => setFormData({ ...formData, foodType: text })}
+              value={foodType}
+              onChangeText={setFoodType}
             />
           </View>
 
@@ -35,8 +136,8 @@ export default function DonationRequest() {
               <TextInput
                 className="bg-gray-50 px-4 py-3 rounded-xl font-rubik text-gray-800"
                 placeholder="e.g., 5 kg"
-                // value={formData.quantity}
-                // onChangeText={(text) => setFormData({ ...formData, quantity: text })}
+                value={quantity}
+                onChangeText={setQuantity}
               />
             </View>
             <View className="flex-1 ml-2">
@@ -44,24 +145,10 @@ export default function DonationRequest() {
               <TextInput
                 className="bg-gray-50 px-4 py-3 rounded-xl font-rubik text-gray-800"
                 placeholder="e.g., 50 people"
-                // value={formData.servings}
-                // onChangeText={(text) => setFormData({ ...formData, servings: text })}
+                value={services}
+                onChangeText={setServices}
               />
             </View>
-          </View>
-
-          {/* Pickup Time */}
-          <View className="p-4 border-b border-gray-100">
-            <Text className="font-rubik-medium text-gray-700 mb-2">Preferred Pickup Time</Text>
-            <TouchableOpacity 
-              className="bg-gray-50 px-4 py-3 rounded-xl flex-row items-center"
-              onPress={() => {/* Add time picker */}}
-            >
-              <MaterialIcons name="schedule" size={20} color="#6B7280" />
-              <Text className="font-rubik text-gray-600 ml-2">
-                {/* {formData.pickupTime || "Select time"} */}Select time
-              </Text>
-            </TouchableOpacity>
           </View>
 
           {/* Description */}
@@ -73,8 +160,8 @@ export default function DonationRequest() {
               multiline
               numberOfLines={4}
               textAlignVertical="top"
-              // value={formData.description}
-              // onChangeText={(text) => setFormData({ ...formData, description: text })}
+              value={description}
+              onChangeText={setDescription}
             />
           </View>
 
@@ -87,8 +174,8 @@ export default function DonationRequest() {
               multiline
               numberOfLines={2}
               textAlignVertical="top"
-              // value={formData.address}
-              // onChangeText={(text) => setFormData({ ...formData, address: text })}
+              value={pickupAddress}
+              onChangeText={setPickupAddress}
             />
           </View>
         </View>
@@ -97,9 +184,10 @@ export default function DonationRequest() {
         <View className="px-4">
           <TouchableOpacity 
             className="bg-orange-500 py-4 rounded-xl items-center"
-            onPress={() => {/* Handle submission */}}
+            onPress={handleSubmit}
+            disabled={loading}
           >
-            <Text className="text-white font-rubik-bold text-lg">Submit Request</Text>
+            <Text className="text-white font-rubik-bold text-lg">{loading ? 'Submitting...' : 'Submit Request'}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

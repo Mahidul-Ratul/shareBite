@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Image, Text, TouchableOpacity, Alert, Dimensions, ActivityIndicator, Linking } from 'react-native';
+import { View, ScrollView, Image, Text, TouchableOpacity, Alert, Dimensions, ActivityIndicator, Linking, Modal } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -93,6 +93,9 @@ const DonationDetail = () => {
   const [volunteerData, setVolunteerData] = useState<any>(null);
   const [images, setImages] = useState<string[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [hasRated, setHasRated] = useState(false);
+  const [selectedRating, setSelectedRating] = useState(0);
 
   useEffect(() => {
     const fetchDonationData = async () => {
@@ -116,7 +119,6 @@ const DonationDetail = () => {
             .single();
           if (!userError) setUserData(userData);
         }
-        
         // Fetch volunteer information if volunteer is assigned
         if (data?.volunteer_id) {
           const { data: volunteerData, error: volunteerError } = await supabase
@@ -125,6 +127,45 @@ const DonationDetail = () => {
             .eq('id', data.volunteer_id)
             .single();
           if (!volunteerError) setVolunteerData(volunteerData);
+        }
+        // 30-min timeout logic for volunteer assignment
+        if (data?.status === 'approvedF' && !data?.volunteer_id) {
+          const { data: notif, error: notifError } = await supabase
+            .from('notifications')
+            .select('created_at')
+            .eq('donation_id', data.id)
+            .eq('type', 'assigned')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+          if (!notifError && notif && notif.created_at) {
+            const notifTime = new Date(notif.created_at).getTime();
+            const now = Date.now();
+            const diffMinutes = (now - notifTime) / (1000 * 60);
+            if (diffMinutes > 30) {
+              // Update donation status and notify receiver
+              await supabase.from('donation').update({ status: 'self_collect_offer' }).eq('id', data.id);
+              await supabase.from('notifications').insert([
+                {
+                  title: 'No Volunteer Response',
+                  message: 'No volunteers responded in time. You can self-collect or cancel the donation.',
+                  type: 'self_collect',
+                  isread: false,
+                  for: 'receiver',
+                  donation_id: data.id,
+                  created_at: new Date().toISOString(),
+                  ngo_id: data.ngo_id,
+                }
+              ]);
+              // Refresh donation data
+              const { data: updatedDonation } = await supabase
+                .from('donation')
+                .select('*')
+                .eq('id', data.id)
+                .single();
+              setDonation(updatedDonation);
+            }
+          }
         }
       } catch (error) {
         Alert.alert('Error', 'Failed to load donation details');
@@ -363,6 +404,96 @@ const DonationDetail = () => {
       setDonation((prev: any) => ({ ...prev, status: newStatus }));
     } catch (error) {
       Alert.alert('Error', 'Failed to update confirmation.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRateVolunteer = async () => {
+    if (!volunteerData?.id) {
+      Alert.alert('Error', 'Volunteer information not available.');
+      return;
+    }
+
+    if (selectedRating === 0) {
+      Alert.alert('Rating Required', 'Please select a rating before submitting.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { data: currentVolunteer, error: fetchError } = await supabase
+        .from('volunteer')
+        .select('point')
+        .eq('id', volunteerData.id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      const currentPoints = currentVolunteer?.point || 0;
+      const newPoints = currentPoints + selectedRating;
+
+      const { error: updateError } = await supabase
+        .from('volunteer')
+        .update({ point: newPoints })
+        .eq('id', volunteerData.id);
+
+      if (updateError) throw updateError;
+
+      setHasRated(true);
+      setShowRatingModal(false);
+      setSelectedRating(0);
+
+      Alert.alert('Rating Submitted', `Thank you for rating ${volunteerData.name} with ${selectedRating}/5 stars!`);
+
+    } catch (error) {
+      console.error('Error updating volunteer rating:', error);
+      Alert.alert('Error', 'Failed to submit rating. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handler for self-collect
+  const handleSelfCollect = () => {
+    router.push({ pathname: '/root/(tabs)/receiver/self_collect_status', params: { id } });
+  };
+
+  // Handler for cancel
+  const handleCancelDonation = async () => {
+    setIsLoading(true);
+    try {
+      await supabase.from('donation').update({ status: 'cancelled' }).eq('id', id);
+      // Notify donor and admin
+      const notifications = [];
+      if (donation?.donor_id) {
+        notifications.push({
+          title: 'Donation Cancelled',
+          message: 'The receiver has cancelled the donation.',
+          type: 'cancelled',
+          isread: false,
+          for: 'donor',
+          donation_id: id,
+          created_at: new Date().toISOString(),
+          donor_id: donation.donor_id,
+        });
+      }
+      notifications.push({
+        title: 'Donation Cancelled',
+        message: 'The receiver has cancelled the donation.',
+        type: 'cancelled',
+        isread: false,
+        for: 'admin',
+        donation_id: id,
+        created_at: new Date().toISOString(),
+        ngo_id: donation?.ngo_id,
+      });
+      await supabase.from('notifications').insert(notifications);
+      Alert.alert('Donation Cancelled', 'You have cancelled the donation.', [
+        { text: 'OK', onPress: () => router.back() },
+      ]);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to cancel donation.');
     } finally {
       setIsLoading(false);
     }
@@ -619,6 +750,32 @@ const DonationDetail = () => {
                   </Text>
                 </View>
               </View>
+              
+              {/* Rating Section - Show only if donation is completed and not rated yet */}
+              {donation?.status === 'receiver confirmed' && !hasRated && (
+                <View className="mt-4 pt-4 border-t border-green-200">
+                  <Text className="text-base font-medium text-gray-700 mb-3">Rate this volunteer's service:</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowRatingModal(true)}
+                    className="bg-gradient-to-r from-yellow-400 to-yellow-500 py-3 px-6 rounded-xl self-start shadow-lg"
+                  >
+                    <View className="flex-row items-center">
+                      <MaterialIcons name="star" size={20} color="#fff" />
+                      <Text className="text-white font-semibold ml-2 text-base">Rate Volunteer</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
+              
+              {/* Show rating confirmation if already rated */}
+              {hasRated && (
+                <View className="mt-4 pt-4 border-t border-green-200">
+                  <View className="flex-row items-center">
+                    <MaterialIcons name="check-circle" size={20} color="#16a34a" />
+                    <Text className="text-green-600 ml-2 font-medium">Thank you for rating!</Text>
+                  </View>
+                </View>
+              )}
             </View>
           )}
 
@@ -669,34 +826,55 @@ const DonationDetail = () => {
           </View>
 
           {/* Timeline - Updated to match donor's implementation */}
-          <View className="bg-white rounded-xl p-4 border border-gray-100 mt-8 mb-8">
-            <Text className="font-bold text-gray-800 mb-3">Timeline</Text>
-            {STATUS_STAGES.map((stage, index) => {
-              // Handle receiver acceptance step
-              if (stage.key === 'receiver_acceptance') {
-                // Show this step when status is approvedF, rejectedF, or any status after approvedF
-                const shouldShow = ['approvedF', 'rejectedF', 'volunteer is assigned', 'on the way to receive food', 'food collected', 'on the way to deliver food', 'delivered the food', 'receiver confirmed'].includes(donation?.status || '');
-                if (!shouldShow) return null;
-                
-                // Determine if this step is completed, current, or pending
-                let isCompleted = false;
-                let isCurrent = false;
-                let customLabel = stage.label;
-                let customDescription = stage.description;
-                
-                if (donation?.status === 'rejectedF') {
-                  isCompleted = true;
-                  customLabel = 'You Rejected';
-                  customDescription = 'You rejected the donation offer.';
-                } else if (['volunteer is assigned', 'on the way to receive food', 'food collected', 'on the way to deliver food', 'delivered the food', 'receiver confirmed'].includes(donation?.status || '')) {
-                  isCompleted = true;
-                  customLabel = 'You Accepted';
-                  customDescription = 'You accepted the donation offer.';
-                } else if (donation?.status === 'approvedF') {
-                  isCurrent = true;
-                  customLabel = 'Your Decision';
-                  customDescription = 'You need to accept or reject the donation offer.';
+          {donation.status !== 'cancelled' && (
+            <View className="bg-white rounded-xl p-4 border border-gray-100 mt-8 mb-8">
+              <Text className="font-bold text-gray-800 mb-3">Timeline</Text>
+              {STATUS_STAGES.map((stage, index) => {
+                // Handle receiver acceptance step
+                if (stage.key === 'receiver_acceptance') {
+                  // Show this step when status is approvedF, rejectedF, or any status after approvedF
+                  const shouldShow = ['approvedF', 'rejectedF', 'volunteer is assigned', 'on the way to receive food', 'food collected', 'on the way to deliver food', 'delivered the food', 'receiver confirmed'].includes(donation?.status || '');
+                  if (!shouldShow) return null;
+                  
+                  // Determine if this step is completed, current, or pending
+                  let isCompleted = false;
+                  let isCurrent = false;
+                  let customLabel = stage.label;
+                  let customDescription = stage.description;
+                  
+                  if (donation?.status === 'rejectedF') {
+                    isCompleted = true;
+                    customLabel = 'You Rejected';
+                    customDescription = 'You rejected the donation offer.';
+                  } else if (['volunteer is assigned', 'on the way to receive food', 'food collected', 'on the way to deliver food', 'delivered the food', 'receiver confirmed'].includes(donation?.status || '')) {
+                    isCompleted = true;
+                    customLabel = 'You Accepted';
+                    customDescription = 'You accepted the donation offer.';
+                  } else if (donation?.status === 'approvedF') {
+                    isCurrent = true;
+                    customLabel = 'Your Decision';
+                    customDescription = 'You need to accept or reject the donation offer.';
+                  }
+                  
+                  return (
+                    <View key={stage.key} className="flex-row mb-4 last:mb-0 items-center">
+                      <View className="items-center mr-4">
+                        <View className={`w-4 h-4 rounded-full ${isCompleted ? 'bg-green-500' : isCurrent ? 'bg-blue-500' : 'bg-gray-300'} border-2 border-white shadow`} />
+                        {index !== STATUS_STAGES.length - 1 && (
+                          <View className={`w-0.5 h-8 ${isCompleted ? 'bg-green-200' : isCurrent ? 'bg-blue-200' : 'bg-gray-200'} my-1`} />
+                        )}
+                      </View>
+                      <View className="flex-1">
+                        <Text className={`font-medium text-base ${isCompleted ? 'text-green-700' : isCurrent ? 'text-blue-700' : 'text-gray-400'}`}>{customLabel}</Text>
+                        <Text className={`text-sm ${isCompleted ? 'text-green-600' : isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>{customDescription}</Text>
+                      </View>
+                    </View>
+                  );
                 }
+                
+                // For all other stages, show them normally
+                const isCompleted = index < STATUS_STAGES.findIndex(s => s.key === donation?.status);
+                const isCurrent = index === STATUS_STAGES.findIndex(s => s.key === donation?.status);
                 
                 return (
                   <View key={stage.key} className="flex-row mb-4 last:mb-0 items-center">
@@ -707,33 +885,14 @@ const DonationDetail = () => {
                       )}
                     </View>
                     <View className="flex-1">
-                      <Text className={`font-medium text-base ${isCompleted ? 'text-green-700' : isCurrent ? 'text-blue-700' : 'text-gray-400'}`}>{customLabel}</Text>
-                      <Text className={`text-sm ${isCompleted ? 'text-green-600' : isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>{customDescription}</Text>
+                      <Text className={`font-medium text-base ${isCompleted ? 'text-green-700' : isCurrent ? 'text-blue-700' : 'text-gray-400'}`}>{stage.label}</Text>
+                      <Text className={`text-sm ${isCompleted ? 'text-green-600' : isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>{stage.description}</Text>
                     </View>
                   </View>
                 );
-              }
-              
-              // For all other stages, show them normally
-              const isCompleted = index < STATUS_STAGES.findIndex(s => s.key === donation?.status);
-              const isCurrent = index === STATUS_STAGES.findIndex(s => s.key === donation?.status);
-              
-              return (
-                <View key={stage.key} className="flex-row mb-4 last:mb-0 items-center">
-                  <View className="items-center mr-4">
-                    <View className={`w-4 h-4 rounded-full ${isCompleted ? 'bg-green-500' : isCurrent ? 'bg-blue-500' : 'bg-gray-300'} border-2 border-white shadow`} />
-                    {index !== STATUS_STAGES.length - 1 && (
-                      <View className={`w-0.5 h-8 ${isCompleted ? 'bg-green-200' : isCurrent ? 'bg-blue-200' : 'bg-gray-200'} my-1`} />
-                    )}
-                  </View>
-                  <View className="flex-1">
-                    <Text className={`font-medium text-base ${isCompleted ? 'text-green-700' : isCurrent ? 'text-blue-700' : 'text-gray-400'}`}>{stage.label}</Text>
-                    <Text className={`text-sm ${isCompleted ? 'text-green-600' : isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>{stage.description}</Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
+              })}
+            </View>
+          )}
 
           {/* Accept/Reject only if status is 'approved' */}
           {donation.status === 'approved' && (
@@ -786,8 +945,91 @@ const DonationDetail = () => {
               </TouchableOpacity>
             </View>
           )}
+
+          {/* Self-Collect and Cancel Banner */}
+          {donation?.status === 'self_collect_offer' && (
+            <View className="bg-yellow-100 p-4 rounded-xl mt-4">
+              <Text className="text-yellow-800 font-bold mb-2">
+                No volunteers are available. You can self-collect or cancel the donation.
+              </Text>
+              <TouchableOpacity
+                className="bg-orange-500 py-3 rounded-xl items-center mt-2"
+                onPress={handleSelfCollect}
+              >
+                <Text className="text-white font-bold">Self-Collect</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="bg-red-500 py-3 rounded-xl items-center mt-2"
+                onPress={handleCancelDonation}
+              >
+                <Text className="text-white font-bold">Cancel Donation</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </ScrollView>
+      
+      {/* Rating Modal */}
+      <Modal
+        visible={showRatingModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowRatingModal(false)}
+      >
+        <View className="flex-1 bg-black bg-opacity-50 justify-center items-center">
+          <View className="bg-white rounded-3xl p-8 mx-4 w-96">
+            <Text className="text-2xl font-bold text-center mb-2 text-gray-800">Rate Volunteer</Text>
+            <Text className="text-center text-gray-600 mb-8 text-base">How would you rate {volunteerData?.name || 'Volunteer'}?</Text>
+            
+            {/* Star Rating */}
+            <View className="flex-row justify-center mb-8">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity
+                  key={star}
+                  onPress={() => setSelectedRating(star)}
+                  className="mx-2"
+                >
+                  <MaterialIcons
+                    name={star <= selectedRating ? "star" : "star-border"}
+                    size={40}
+                    color={star <= selectedRating ? "#fbbf24" : "#d1d5db"}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            {/* Rating Text */}
+            <Text className="text-center text-lg font-semibold mb-8 text-gray-700">
+              {selectedRating === 0 ? 'Select a rating' : `${selectedRating}/5 stars`}
+            </Text>
+            
+            <View className="flex-row space-x-4">
+              <TouchableOpacity
+                onPress={() => {
+                  setShowRatingModal(false);
+                  setSelectedRating(0);
+                }}
+                className="flex-1 bg-gray-300 py-4 rounded-xl"
+              >
+                <Text className="text-center font-semibold text-gray-700">Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleRateVolunteer}
+                className={`flex-1 py-4 rounded-xl ${
+                  selectedRating > 0 ? 'bg-gradient-to-r from-yellow-400 to-yellow-500' : 'bg-gray-300'
+                }`}
+                disabled={selectedRating === 0}
+              >
+                <Text className={`text-center font-semibold ${
+                  selectedRating > 0 ? 'text-white' : 'text-gray-500'
+                }`}>
+                  Submit Rating
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };

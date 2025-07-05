@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Image, Text, TouchableOpacity, Alert, Dimensions, Pressable, Modal, Linking, Platform } from 'react-native';
+import { View, ScrollView, Image, Text, TouchableOpacity, Alert, Dimensions, Pressable, Modal, Linking, Platform, ActivityIndicator } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -112,69 +112,71 @@ const DonationDetail = () => {
     }
   };
 
+  // Fetch donation data function
+  const fetchDonationData = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('donation')
+        .select('*')
+        .eq('id', id)
+        .single();
+      if (error) {
+        throw error;
+      }
+      setDonation(data);
+      if (data?.ngo_id) {
+        const { data: receiverData, error: receiverError } = await supabase
+          .from('receiver')
+          .select('*')
+          .eq('id', data.ngo_id)
+          .single();
+        if (receiverError) throw receiverError;
+        setReceiver(receiverData);
+      }
+      // Fetch donor info
+      if (data?.donor_id) {
+        try {
+          const { data: donorInfo, error: donorError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', data.donor_id)
+            .single();
+          if (!donorError && donorInfo) {
+            console.log('Donor data fetched:', donorInfo);
+            setDonorData(donorInfo);
+          } else {
+            console.log('Donor fetch error:', donorError);
+          }
+        } catch (err) {
+          console.log('Donor fetch exception:', err);
+        }
+      }
+
+      // Set contact person data from donation
+      if (data) {
+        const contactData = {
+          name: data.Name || null,
+          contact: data.Contact || null,
+          location: data.Location || null
+        };
+        console.log('Contact person data:', contactData);
+        setContactPersonData(contactData);
+      }
+      // Set images if available
+      if (data?.images && Array.isArray(data.images)) {
+        setImages(data.images);
+      } else if (data?.image) {
+        setImages([data.image]);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to load donation details');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Fetch donation data when the component mounts
   useEffect(() => {
-    const fetchDonationData = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('donation')
-          .select('*')
-          .eq('id', id)
-          .single();
-        if (error) {
-          throw error;
-        }
-        setDonation(data);
-        if (data?.ngo_id) {
-          const { data: receiverData, error: receiverError } = await supabase
-            .from('receiver')
-            .select('*')
-            .eq('id', data.ngo_id)
-            .single();
-          if (receiverError) throw receiverError;
-          setReceiver(receiverData);
-        }
-        // Fetch donor info
-        if (data?.donor_id) {
-          try {
-            const { data: donorInfo, error: donorError } = await supabase
-              .from('users')
-              .select('*')
-              .eq('id', data.donor_id)
-              .single();
-            if (!donorError && donorInfo) {
-              console.log('Donor data fetched:', donorInfo);
-              setDonorData(donorInfo);
-            } else {
-              console.log('Donor fetch error:', donorError);
-            }
-          } catch (err) {
-            console.log('Donor fetch exception:', err);
-          }
-        }
-
-        // Set contact person data from donation
-        if (data) {
-          const contactData = {
-            name: data.Name || null,
-            contact: data.Contact || null,
-            location: data.Location || null
-          };
-          console.log('Contact person data:', contactData);
-          setContactPersonData(contactData);
-        }
-        // Set images if available
-        if (data?.images && Array.isArray(data.images)) {
-          setImages(data.images);
-        } else if (data?.image) {
-          setImages([data.image]);
-        }
-      } catch (error) {
-        Alert.alert('Error', 'Failed to load donation details');
-      } finally {
-        setIsLoading(false);
-      }
-    };
     if (id) {
       fetchDonationData();
     }
@@ -191,49 +193,89 @@ const DonationDetail = () => {
     }
   }, [modalVisible, selectedOption, donation]);
 
-  const handleApproval = async (status: 'approved' | 'rejected') => {
+  const handleApproval = async (status: 'approved' | 'rejected' | 'approvedF') => {
     setIsLoading(true);
     try {
+      // Check if this is a request-based donation
+      const isRequestBased = donation.request_id;
+      
+      let newStatus = status;
+      if (status === 'approved' && isRequestBased) {
+        // For request-based donations, skip receiver acceptance and go directly to volunteer assignment
+        newStatus = 'approvedF';
+      }
+      
       const { error } = await supabase
         .from('donation')
-        .update({ status: status })
+        .update({ status: newStatus })
         .eq('id', id);
       if (error) throw error;
+      
       if (status === 'approved') {
-        // Notify receiver
-        const { error: notifError1 } = await supabase.from('notifications').insert([
-          {
-            title: 'New Donation Offer',
-            message: `You have received a new donation offer: ${donation.Types} - ${donation.Quantity}`,
-            type: 'assigned',
-            isread: false,
-            for: 'receiver',
-            donation_id: donation.id,
-            created_at: new Date().toISOString(),
-            ngo_id: donation.ngo_id,
+        if (isRequestBased) {
+          // For request-based donations: notify volunteers directly
+          await notifyNearbyVolunteersForRequest();
+          
+          // Notify donor
+          const { error: notifError2 } = await supabase.from('notifications').insert([
+            {
+              title: 'Donation Approved',
+              message: `Your donation (${donation.Types} - ${donation.Quantity}) has been approved by the admin. Volunteers will be notified.`,
+              type: 'accepted',
+              isread: false,
+              for: 'donor',
+              donation_id: donation.id,
+              created_at: new Date().toISOString(),
+              donor_id: donation.donor_id,
+            }
+          ]);
+          if (notifError2) {
+            console.error('Donor Notification Error:', notifError2.message);
           }
-        ]);
-        // Notify donor
-        const { error: notifError2 } = await supabase.from('notifications').insert([
-          {
-            title: 'Donation Approved',
-            message: `Your donation (${donation.Types} - ${donation.Quantity}) has been approved by the admin.`,
-            type: 'accepted',
-            isread: false,
-            for: 'donor',
-            donation_id: donation.id,
-            created_at: new Date().toISOString(),
-            donor_id: donation.donor_id,
+        } else {
+          // For normal donations: notify receiver for acceptance
+          const { error: notifError1 } = await supabase.from('notifications').insert([
+            {
+              title: 'New Donation Offer',
+              message: `You have received a new donation offer: ${donation.Types} - ${donation.Quantity}`,
+              type: 'assigned',
+              isread: false,
+              for: 'receiver',
+              donation_id: donation.id,
+              created_at: new Date().toISOString(),
+              ngo_id: donation.ngo_id,
+            }
+          ]);
+          // Notify donor
+          const { error: notifError2 } = await supabase.from('notifications').insert([
+            {
+              title: 'Donation Approved',
+              message: `Your donation (${donation.Types} - ${donation.Quantity}) has been approved by the admin.`,
+              type: 'accepted',
+              isread: false,
+              for: 'donor',
+              donation_id: donation.id,
+              created_at: new Date().toISOString(),
+              donor_id: donation.donor_id,
+            }
+          ]);
+          if (notifError1) {
+            console.error('Receiver Notification Error:', notifError1.message);
           }
-        ]);
-        if (notifError1) {
-          console.error('Receiver Notification Error:', notifError1.message);
-        }
-        if (notifError2) {
-          console.error('Donor Notification Error:', notifError2.message);
+          if (notifError2) {
+            console.error('Donor Notification Error:', notifError2.message);
+          }
         }
       }
-      Alert.alert('Success', `Donation has been ${status}`, [
+      
+      const successMessage = isRequestBased && status === 'approved' 
+        ? 'Donation approved. Volunteers will be notified automatically.'
+        : `Donation has been ${status}`;
+        
+      // Refresh donation data to show updated status
+      await fetchDonationData();
+        
+      Alert.alert('Success', successMessage, [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (error) {
@@ -284,6 +326,161 @@ const DonationDetail = () => {
       Alert.alert('Error', 'Failed to update donation assignment');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const notifyNearbyVolunteersForRequest = async () => {
+    try {
+      console.log('Starting notifyNearbyVolunteersForRequest for donation:', donation.id);
+      
+      // Get receiver location to find nearby volunteers
+      if (!donation.ngo_id) {
+        console.error('No receiver ID found for request-based donation');
+        return;
+      }
+
+      // Fetch receiver location
+      const { data: receiverData, error: receiverError } = await supabase
+        .from('receiver')
+        .select('location')
+        .eq('id', donation.ngo_id)
+        .single();
+
+      if (receiverError || !receiverData) {
+        console.error('Failed to fetch receiver location:', receiverError);
+        return;
+      }
+
+      console.log('Receiver location data:', receiverData.location);
+
+      // Parse receiver location
+      let receiverLat, receiverLng;
+      try {
+        const locationData = JSON.parse(receiverData.location);
+        receiverLat = locationData.latitude;
+        receiverLng = locationData.longitude;
+        console.log('Parsed receiver coordinates:', receiverLat, receiverLng);
+      } catch (error) {
+        console.error('Failed to parse receiver location:', error);
+        return;
+      }
+
+      // Fetch all volunteers
+      const { data: volunteers, error: volunteersError } = await supabase
+        .from('volunteer')
+        .select('*');
+
+      if (volunteersError || !volunteers) {
+        console.error('Failed to fetch volunteers:', volunteersError);
+        return;
+      }
+
+      console.log('Total volunteers found:', volunteers.length);
+
+      // Find volunteers within 15km radius
+      const nearbyVolunteers = volunteers.filter((volunteer) => {
+        if (!volunteer.location) {
+          console.log('Volunteer has no location:', volunteer.id);
+          return false;
+        }
+        
+        try {
+          // Robustly handle different location formats: WKT, JSON, object
+          let volLocation = null;
+          if (typeof volunteer.location === 'string') {
+            if (volunteer.location.startsWith('POINT(')) {
+              // Parse WKT: "POINT(lon lat)"
+              const match = volunteer.location.match(/POINT\\(([-\\d\\.]+) ([-\\d\\.]+)\\)/);
+              if (match) {
+                volLocation = { longitude: parseFloat(match[1]), latitude: parseFloat(match[2]) };
+              }
+            } else {
+              // Try JSON
+              const parsed = JSON.parse(volunteer.location);
+              if (parsed && (parsed.latitude || parsed.lat) && (parsed.longitude || parsed.lng)) {
+                volLocation = {
+                  latitude: parsed.latitude ?? parsed.lat,
+                  longitude: parsed.longitude ?? parsed.lng,
+                };
+              }
+            }
+          } else if (typeof volunteer.location === 'object' && volunteer.location !== null) {
+            volLocation = {
+              latitude: volunteer.location.latitude ?? volunteer.location.lat,
+              longitude: volunteer.location.longitude ?? volunteer.location.lng,
+            };
+          }
+
+          if (!volLocation || typeof volLocation.latitude !== 'number' || typeof volLocation.longitude !== 'number') {
+            console.log('Invalid volunteer location format:', volunteer.id, volunteer.location);
+            return false;
+          }
+          
+          const distance = calculateDistance(
+            receiverLat,
+            receiverLng,
+            volLocation.latitude,
+            volLocation.longitude
+          );
+          
+          console.log(`Volunteer ${volunteer.id} distance: ${distance.toFixed(2)}km`);
+          return distance <= 15; // 15km radius
+        } catch (error) {
+          console.error('Error calculating distance for volunteer:', volunteer.id, error, 'Location:', volunteer.location);
+          return false;
+        }
+      });
+
+      console.log('Nearby volunteers found:', nearbyVolunteers.length);
+
+      if (nearbyVolunteers.length === 0) {
+        console.log('No nearby volunteers found for request-based donation');
+        // Still create a notification for all volunteers as fallback
+        const fallbackNotifications = volunteers.map((volunteer) => ({
+          title: 'New Request-Based Donation',
+          message: `A donation (${donation.Types} - ${donation.Quantity}) is available for delivery to a specific receiver.`,
+          type: 'assigned',
+          isread: false,
+          for: 'volunteer',
+          donation_id: donation.id,
+          created_at: new Date().toISOString(),
+          volunteer_id: volunteer.id,
+          ngo_id: donation.ngo_id,
+        }));
+        
+        const { error: fallbackError } = await supabase.from('notifications').insert(fallbackNotifications);
+        if (fallbackError) {
+          console.error('Failed to send fallback notifications:', fallbackError);
+        } else {
+          console.log(`Sent fallback notifications to ${volunteers.length} volunteers`);
+        }
+        return;
+      }
+
+      // Create notifications for all nearby volunteers
+      const notifications = nearbyVolunteers.map((volunteer) => ({
+        title: 'New Request-Based Donation',
+        message: `A donation (${donation.Types} - ${donation.Quantity}) is available for delivery to a specific receiver.`,
+        type: 'assigned',
+        isread: false,
+        for: 'volunteer',
+        donation_id: donation.id,
+        created_at: new Date().toISOString(),
+        volunteer_id: volunteer.id,
+        ngo_id: donation.ngo_id,
+      }));
+
+      console.log('Creating notifications for volunteers:', notifications.length);
+
+      // Insert notifications
+      const { error: notifError } = await supabase.from('notifications').insert(notifications);
+      if (notifError) {
+        console.error('Failed to notify volunteers:', notifError);
+      } else {
+        console.log(`Successfully notified ${nearbyVolunteers.length} nearby volunteers for request-based donation`);
+      }
+    } catch (error) {
+      console.error('Error in notifyNearbyVolunteersForRequest:', error);
     }
   };
 
@@ -344,7 +541,9 @@ const DonationDetail = () => {
         return {
           color: '#16a34a',
           icon: 'check-circle',
-          text: 'Approved – Assign Volunteer or NGO',
+          text: donation.request_id 
+            ? 'Approved – Volunteers Notified (Request-Based)'
+            : 'Approved – Assign Volunteer or NGO',
           bg: 'bg-green-50',
           textColor: 'text-green-800',
         };
@@ -446,7 +645,11 @@ const DonationDetail = () => {
   };
 
   if (isLoading) {
-    return <Text>Loading...</Text>;
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+        <ActivityIndicator size="large" color="#f97316" />
+      </View>
+    );
   }
   if (!donation) {
     return <Text>Donation not found or inaccessible.</Text>;
@@ -791,43 +994,104 @@ const DonationDetail = () => {
               {/* Timeline */}
               <View className="mt-6">
                 <Text className="text-lg font-bold text-gray-900 mb-3">Donation Timeline</Text>
-                {[
-                  { key: 'pending', label: 'Donation Requested', description: 'Donor posted a new donation request.' },
-                  { key: 'approved', label: 'Donation Approved', description: 'Admin approved the donation request.' },
-                  { key: 'approvedF', label: 'Ready for Assignment', description: 'Donation is ready to be assigned to a volunteer or NGO.' },
-                  { key: 'receiver_acceptance', label: 'Receiver Decision', description: 'Receiver will accept or reject the donation offer.' },
-                  { key: 'volunteer is assigned', label: 'Volunteer Assigned', description: 'A volunteer has been assigned to collect the donation.' },
-                  { key: 'on the way to receive food', label: 'Volunteer On The Way', description: 'Volunteer is on the way to collect the donation.' },
-                  { key: 'food collected', label: 'Food Collected', description: 'The food has been collected by the volunteer.' },
-                  { key: 'on the way to deliver food', label: 'On The Way To Receiver', description: 'Volunteer is delivering the food to the receiver.' },
-                  { key: 'delivered the food', label: 'Donation Delivered', description: 'The donation has been delivered to the receiver.' },
-                  { key: 'receiver confirmed', label: 'Receiver Confirmed', description: 'The receiver confirmed receiving the food.' },
-                ].map((stage, idx, arr) => {
-                  // Handle receiver acceptance step
-                  if (stage.key === 'receiver_acceptance') {
-                    // Show this step when status is approvedF, rejectedF, or any status after approvedF
-                    const shouldShow = ['approvedF', 'rejectedF', 'volunteer is assigned', 'on the way to receive food', 'food collected', 'on the way to deliver food', 'delivered the food', 'receiver confirmed'].includes(donation.status);
-                    if (!shouldShow) return null;
-                    
-                    // Determine if this step is completed, current, or pending
-                    let isCompleted = false;
-                    let isCurrent = false;
-                    let customLabel = stage.label;
-                    let customDescription = stage.description;
-                    
-                    if (donation.status === 'rejectedF') {
-                      isCompleted = true;
-                      customLabel = 'Receiver Rejected';
-                      customDescription = 'Receiver rejected the donation offer.';
-                    } else if (['volunteer is assigned', 'on the way to receive food', 'food collected', 'on the way to deliver food', 'delivered the food', 'receiver confirmed'].includes(donation.status)) {
-                      isCompleted = true;
-                      customLabel = 'Receiver Accepted';
-                      customDescription = 'Receiver accepted the donation offer.';
-                    } else if (donation.status === 'approvedF') {
-                      isCurrent = true;
-                      customLabel = 'Receiver Decision';
-                      customDescription = 'Waiting for receiver to accept or reject the donation offer.';
+                {(() => {
+                  // Check if this is a request-based donation
+                  const isRequestBased = donation?.request_id;
+                  
+                  // Define timeline stages based on donation type
+                  const timelineStages = isRequestBased ? [
+                    { key: 'pending', label: 'Request Submitted', description: 'Receiver submitted a donation request.' },
+                    { key: 'approved', label: 'Request Approved', description: 'Admin approved the donation request.' },
+                    { key: 'approvedF', label: 'Ready for Assignment', description: 'Donation is ready to be assigned to a volunteer.' },
+                    { key: 'volunteer is assigned', label: 'Volunteer Assigned', description: 'A volunteer has been assigned to collect the donation.' },
+                    { key: 'on the way to receive food', label: 'Volunteer On The Way', description: 'Volunteer is on the way to collect the donation.' },
+                    { key: 'food collected', label: 'Food Collected', description: 'The food has been collected by the volunteer.' },
+                    { key: 'on the way to deliver food', label: 'On The Way To Receiver', description: 'Volunteer is delivering the food to the receiver.' },
+                    { key: 'delivered the food', label: 'Donation Delivered', description: 'The donation has been delivered to the receiver.' },
+                    { key: 'receiver confirmed', label: 'Receiver Confirmed', description: 'The receiver confirmed receiving the food.' },
+                  ] : [
+                    { key: 'pending', label: 'Donation Requested', description: 'Donor posted a new donation request.' },
+                    { key: 'approved', label: 'Donation Approved', description: 'Admin approved the donation request.' },
+                    { key: 'approvedF', label: 'Ready for Assignment', description: 'Donation is ready to be assigned to a volunteer or NGO.' },
+                    { key: 'receiver_acceptance', label: 'Receiver Decision', description: 'Receiver will accept or reject the donation offer.' },
+                    { key: 'volunteer is assigned', label: 'Volunteer Assigned', description: 'A volunteer has been assigned to collect the donation.' },
+                    { key: 'on the way to receive food', label: 'Volunteer On The Way', description: 'Volunteer is on the way to collect the donation.' },
+                    { key: 'food collected', label: 'Food Collected', description: 'The food has been collected by the volunteer.' },
+                    { key: 'on the way to deliver food', label: 'On The Way To Receiver', description: 'Volunteer is delivering the food to the receiver.' },
+                    { key: 'delivered the food', label: 'Donation Delivered', description: 'The donation has been delivered to the receiver.' },
+                    { key: 'receiver confirmed', label: 'Receiver Confirmed', description: 'The receiver confirmed receiving the food.' },
+                  ];
+
+                  return timelineStages.map((stage, idx, arr) => {
+                    // Handle receiver acceptance step for non-request-based donations
+                    if (stage.key === 'receiver_acceptance' && !isRequestBased) {
+                      // Show this step when status is approvedF, rejectedF, or any status after approvedF
+                      const shouldShow = ['approvedF', 'rejectedF', 'volunteer is assigned', 'on the way to receive food', 'food collected', 'on the way to deliver food', 'delivered the food', 'receiver confirmed'].includes(donation.status);
+                      if (!shouldShow) return null;
+                      
+                      // Determine if this step is completed, current, or pending
+                      let isCompleted = false;
+                      let isCurrent = false;
+                      let customLabel = stage.label;
+                      let customDescription = stage.description;
+                      
+                      if (donation.status === 'rejectedF') {
+                        isCompleted = true;
+                        customLabel = 'Receiver Rejected';
+                        customDescription = 'Receiver rejected the donation offer.';
+                      } else if (['volunteer is assigned', 'on the way to receive food', 'food collected', 'on the way to deliver food', 'delivered the food', 'receiver confirmed'].includes(donation.status)) {
+                        isCompleted = true;
+                        customLabel = 'Receiver Accepted';
+                        customDescription = 'Receiver accepted the donation offer.';
+                      } else if (donation.status === 'approvedF') {
+                        isCurrent = true;
+                        customLabel = 'Receiver Decision';
+                        customDescription = 'Waiting for receiver to accept or reject the donation offer.';
+                      }
+                      
+                      return (
+                        <View key={stage.key} className="flex-row mb-4 last:mb-0 items-center">
+                          <View className="items-center mr-4">
+                            <View className={`w-4 h-4 rounded-full ${isCompleted ? 'bg-green-500' : isCurrent ? 'bg-blue-500' : 'bg-gray-300'} border-2 border-white shadow`} />
+                            {idx !== arr.length - 1 && (
+                              <View className={`w-0.5 h-8 ${isCompleted ? 'bg-green-200' : isCurrent ? 'bg-blue-200' : 'bg-gray-200'} my-1`} />
+                            )}
+                          </View>
+                          <View className="flex-1">
+                            <Text className={`font-medium text-base ${isCompleted ? 'text-green-700' : isCurrent ? 'text-blue-700' : 'text-gray-400'}`}>{customLabel}</Text>
+                            <Text className={`text-sm ${isCompleted ? 'text-green-600' : isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>{customDescription}</Text>
+                          </View>
+                        </View>
+                      );
                     }
+                    
+                    // For all other stages, show them normally
+                    const statusOrder = isRequestBased ? [
+                      'pending',
+                      'approved',
+                      'approvedF',
+                      'volunteer is assigned',
+                      'on the way to receive food',
+                      'food collected',
+                      'on the way to deliver food',
+                      'delivered the food',
+                      'receiver confirmed',
+                    ] : [
+                      'pending',
+                      'approved',
+                      'approvedF',
+                      'receiver_acceptance',
+                      'volunteer is assigned',
+                      'on the way to receive food',
+                      'food collected',
+                      'on the way to deliver food',
+                      'delivered the food',
+                      'receiver confirmed',
+                    ];
+                    const currentIdx = statusOrder.indexOf(donation.status);
+                    const stageIdx = statusOrder.indexOf(stage.key);
+                    const isCompleted = stageIdx < currentIdx;
+                    const isCurrent = stageIdx === currentIdx;
                     
                     return (
                       <View key={stage.key} className="flex-row mb-4 last:mb-0 items-center">
@@ -838,46 +1102,13 @@ const DonationDetail = () => {
                           )}
                         </View>
                         <View className="flex-1">
-                          <Text className={`font-medium text-base ${isCompleted ? 'text-green-700' : isCurrent ? 'text-blue-700' : 'text-gray-400'}`}>{customLabel}</Text>
-                          <Text className={`text-sm ${isCompleted ? 'text-green-600' : isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>{customDescription}</Text>
+                          <Text className={`font-medium text-base ${isCompleted ? 'text-green-700' : isCurrent ? 'text-blue-700' : 'text-gray-400'}`}>{stage.label}</Text>
+                          <Text className={`text-sm ${isCompleted ? 'text-green-600' : isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>{stage.description}</Text>
                         </View>
                       </View>
                     );
-                  }
-                  
-                  // For all other stages, show them normally
-                  const statusOrder = [
-                    'pending',
-                    'approved',
-                    'approvedF',
-                    'receiver_acceptance',
-                    'volunteer is assigned',
-                    'on the way to receive food',
-                    'food collected',
-                    'on the way to deliver food',
-                    'delivered the food',
-                    'receiver confirmed',
-                  ];
-                  const currentIdx = statusOrder.indexOf(donation.status);
-                  const stageIdx = statusOrder.indexOf(stage.key);
-                  const isCompleted = stageIdx < currentIdx;
-                  const isCurrent = stageIdx === currentIdx;
-                  
-                  return (
-                    <View key={stage.key} className="flex-row mb-4 last:mb-0 items-center">
-                      <View className="items-center mr-4">
-                        <View className={`w-4 h-4 rounded-full ${isCompleted ? 'bg-green-500' : isCurrent ? 'bg-blue-500' : 'bg-gray-300'} border-2 border-white shadow`} />
-                        {idx !== arr.length - 1 && (
-                          <View className={`w-0.5 h-8 ${isCompleted ? 'bg-green-200' : isCurrent ? 'bg-blue-200' : 'bg-gray-200'} my-1`} />
-                        )}
-                      </View>
-                      <View className="flex-1">
-                        <Text className={`font-medium text-base ${isCompleted ? 'text-green-700' : isCurrent ? 'text-blue-700' : 'text-gray-400'}`}>{stage.label}</Text>
-                        <Text className={`text-sm ${isCompleted ? 'text-green-600' : isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>{stage.description}</Text>
-                      </View>
-                    </View>
-                  );
-                })}
+                  });
+                })()}
               </View>
             </View>
           )}
